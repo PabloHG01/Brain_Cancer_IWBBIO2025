@@ -1,0 +1,132 @@
+---
+title: "astrocytoma_estadios"
+author: "Elena Maroto Rica"
+date: "2025-03-07"
+output: html_document
+---
+# 1. Preprocesamiento
+
+```{r, results='hide', warning=FALSE, message=F, include=FALSE, echo=F}
+library(BiocManager)
+library(BiocManager)
+library(org.Hs.eg.db)
+#Incluir KnowSeq y las funciones proporcionadas 
+require(KnowSeq)
+source("convert_to_counts.R")
+source("geneOntologyEnrichment_updated.R")
+source("knowseqReport_updated.R")
+require("e1071")
+require(CORElearn)
+require("caret")
+require("praznik")
+library(caret)
+#install.packages("jsonlite")
+library('jsonlite')
+```
+
+```{r}
+load(file ='samples_astrocytoma_estadios')
+```
+
+Una vez etiquetado correctamente el dataframe *sample* con los ficheros counts:
+
+- Creamos las variables necesarias para el dataframe con los datos de los ficheros counts y se identifica la clase de cada muestra:
+
+```{r}
+Run <- samples_astrocytoma_estadios$File.Name
+Path <- rep("brain/counts",nrow(samples_astrocytoma_estadios))
+Class <- samples_astrocytoma_estadios$tumor_grade
+```
+
+- Se imprimen el número de muetras por clase, donde se pueden ver que estan bien balanceadas, y se guardan en un fichero csv: 
+
+```{r}
+table(Class)
+```
+
+```{r, eval=F}
+data.info <- data.frame(Run = Run, Path = Path, Class = Class)
+write.csv(file = "data_info.csv", x = data.info)
+```
+
+- Se cargan y se aunan los ficheros counts:
+
+```{r, eval=F}
+countsInfo <- countsToMatrix("data_info.csv", extension = "")
+#Guardar fichero de counts por agilizar futuras ejecuciones
+save(countsInfo, file='CountsInfo')
+```
+
+```{r}
+load(file = 'countsInfo')
+```
+
+- Exportamos tanto la matriz de datos como los labels a nuevas variables:
+
+```{r}
+countsMatrix <- countsInfo$countsMatrix
+labels <- countsInfo$labels
+```
+
+- Consultamos los Gene Symbols y el GC content de cada gen y los valores de expresion usando la matriz de count y la anotación previamente adquirida:
+
+```{r}
+myAnnotation <- getGenesAnnotation(rownames(countsMatrix))
+```
+
+```{r, eval=F}
+geneExprMatrix <- calculateGeneExpressionValues(countsMatrix, annotation = myAnnotation)
+# Eliminamos filas sin anotacion de gen
+geneExprMatrix <- geneExprMatrix[!is.na(rownames(geneExprMatrix)),]
+# Guardar fichero de Expresión de Gen por agilizar futuras ejecuciones
+save(geneExprMatrix, file='geneExprMatrix')
+```
+
+```{r}
+load(file = 'geneExprMatrix')
+```
+
+- Realizamos el analisis de calidad y se seleccionan las muestras que pasen por el filtro (no outliers):
+
+```{r, eval=F}
+QAResults <- RNAseqQA(geneExprMatrix, toRemoval = TRUE, 
+                      toPNG=FALSE, toPDF=FALSE)
+save('QAResults', file = 'QAResults')
+```
+
+```{r}
+# Se cargan para su uso:
+load('QAResults')
+# Seleccionar muestras que pasen el filtro (no outliers)
+qualityMatrix <- QAResults$matrix
+qualityLabels <- labels[-which(colnames(geneExprMatrix) %in% QAResults$outliers)]
+```
+
+- Creamos el modelo SVA de variables surrogadas para tratar el efecto batch
+
+```{r, eval=F}
+# Creamos el modelo SVA de variables surrogadas para tratar el efecto batch
+batchMatrix <- batchEffectRemoval(qualityMatrix, qualityLabels, method = "sva")
+
+MATRIZ <- batchMatrix
+LABELS <- qualityLabels
+# Guardar datos de matriz de Expresión Final y Labels por agilizar futuras ejecuciones
+save(MATRIZ, file = 'MATRIZ')
+save(LABELS, file = 'LABELS')
+```
+
+```{r}
+load(file = 'MATRIZ')
+load(file = 'LABELS')
+
+#rownames(MATRIZ)<- make.names(rownames(MATRIZ))
+```
+
+Así, en el siguiente gráfico se muestran un boxplot ordenado que representa cómo los datos (en este caso, los valores en batchMatrix) se distribuyen para cada grupo definido por las etiquetas qualityLabels. Esto es útil para ver si las muestras se agrupan bien por condición biológica y si el efecto batch se ha corregido adecuadamente:
+
+```{r}
+#png('b.png', width = 800, height = 700)
+dataPlot(MATRIZ, qualityLabels, mode = "orderedBoxplot")
+```
+
+

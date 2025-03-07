@@ -37,19 +37,51 @@ samples$Sample.Type[samples$File.ID %in% samples_oligodendroglioma$File.ID] <- '
 ```
 
 ```{r}
-clinical_data <- fromJSON("clinical.cart.2025-03-06.json")
-df_clinical <- as.data.frame(clinical_data)
+df_clinical <- fromJSON("clinical.cart.2025-03-06.json")
+```
+
+```{r}
+df_clinical$tumor_grade <- sapply(df_clinical$diagnoses, function(x) x$tumor_grade)
+```
+
+```{r}
+df_clinical$tumor_grade[grepl('G2', df_clinical$tumor_grade)] <- 'G2'
+df_clinical$tumor_grade[grepl('G3', df_clinical$tumor_grade)] <- 'G3'
 ```
 
 ```{r}
 astrocytoma_G2 <- df_clinical[df_clinical$submitter_id %in% samples_astrocytoma$Case.ID & 
-                              df_clinical$diagnoses$tumor_grade == 'G2', ]
+                              grepl('G2', df_clinical$tumor_grade), ]
 astrocytoma_G3 <- df_clinical[df_clinical$submitter_id %in% samples_astrocytoma$Case.ID & 
-                              df_clinical[[6]]$tumor_grade == 'G3', ]
+                              grepl('G3', df_clinical$tumor_grade), ]
 
 oligodendroglioma_G2 <- df_clinical[df_clinical$submitter_id %in% samples_oligodendroglioma$Case.ID & 
-                              df_clinical[[6]][[1]]$tumor_grade == 'G2', ]
+                              grepl('G2', df_clinical$tumor_grade), ]
 oligodendroglioma_G3 <- df_clinical[df_clinical$submitter_id %in% samples_oligodendroglioma$Case.ID & 
-                              df_clinical[[6]][[1]]$tumor_grade == 'G3', ]
+                              grepl('G3', df_clinical$tumor_grade), ]
+```
+
+```{r}
+samples_astrocytoma_estadios <- samples[samples$Case.ID %in% astrocytoma_G2$submitter_id | 
+                                        samples$Case.ID %in% astrocytoma_G3$submitter_id, ]
+
+samples_astrocytoma_estadios$tumor_grade <- 0
+
+samples_astrocytoma_estadios$tumor_grade[samples_astrocytoma_estadios$Case.ID %in% astrocytoma_G2$submitter_id] <- 'G2'
+samples_astrocytoma_estadios$tumor_grade[samples_astrocytoma_estadios$Case.ID %in% astrocytoma_G3$submitter_id] <- 'G3'
+
+save(samples_astrocytoma_estadios, file ='samples_astrocytoma_estadios')
+
+#########################
+
+samples_oligodendroglioma_estadios <- samples[samples$Case.ID %in% oligodendroglioma_G2$submitter_id | 
+                                        samples$Case.ID %in% oligodendroglioma_G3$submitter_id, ]
+
+samples_oligodendroglioma_estadios$tumor_grade <- 0
+
+samples_oligodendroglioma_estadios$tumor_grade[samples_oligodendroglioma_estadios$Case.ID %in% oligodendroglioma_G2$submitter_id] <- 'G2'
+samples_oligodendroglioma_estadios$tumor_grade[samples_oligodendroglioma_estadios$Case.ID %in% oligodendroglioma_G3$submitter_id] <- 'G3'
+
+save(samples_oligodendroglioma_estadios, file='samples_oligodendroglioma_estadios')
 ```
 

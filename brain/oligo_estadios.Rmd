@@ -1,0 +1,30 @@
+---
+title: "oligo_estadios"
+author: "Elena Maroto Rica"
+date: "2025-03-07"
+output: html_document
+---
+
+```{r, results='hide', warning=FALSE, message=F, include=FALSE, echo=F}
+library(BiocManager)
+library(BiocManager)
+library(org.Hs.eg.db)
+#Incluir KnowSeq y las funciones proporcionadas 
+require(KnowSeq)
+source("convert_to_counts.R")
+source("geneOntologyEnrichment_updated.R")
+source("knowseqReport_updated.R")
+require("e1071")
+require(CORElearn)
+require("caret")
+require("praznik")
+library(caret)
+#install.packages("jsonlite")
+library('jsonlite')
+```
+
+
+```{r}
+load(file='samples_oligodendroglioma_estadios')
+```
+
