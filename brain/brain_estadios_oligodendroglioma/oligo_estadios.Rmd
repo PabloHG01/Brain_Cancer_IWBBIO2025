@@ -11,7 +11,7 @@ library(BiocManager)
 library(org.Hs.eg.db)
 #Incluir KnowSeq y las funciones proporcionadas 
 require(KnowSeq)
-source("convert_to_counts.R")
+#source("convert_to_counts.R")
 source("geneOntologyEnrichment_updated.R")
 source("knowseqReport_updated.R")
 require("e1071")
@@ -27,4 +27,1194 @@ library('jsonlite')
 ```{r}
 load(file='samples_oligodendroglioma_estadios')
 ```
+
+Una vez etiquetado correctamente el dataframe *sample* con los ficheros counts:
+
+- Creamos las variables necesarias para el dataframe con los datos de los ficheros counts y se identifica la clase de cada muestra:
+
+```{r}
+Run <- samples_oligodendroglioma_estadios$File.Name
+Path <- rep("brain/counts",nrow(samples_oligodendroglioma_estadios))
+Class <- samples_oligodendroglioma_estadios$tumor_grade
+```
+
+- Se imprimen el número de muetras por clase, donde se pueden ver que estan bien balanceadas, y se guardan en un fichero csv: 
+
+```{r}
+table(Class)
+```
+```{r, eval=F}
+data.info <- data.frame(Run = Run, Path = Path, Class = Class)
+write.csv(file = "data_info.csv", x = data.info)
+```
+
+- Se cargan y se aunan los ficheros counts:
+
+```{r, eval=F}
+countsInfo <- countsToMatrix("data_info.csv", extension = "")
+#Guardar fichero de counts por agilizar futuras ejecuciones
+save(countsInfo, file='CountsInfo')
+```
+
+```{r}
+load(file = 'CountsInfo')
+```
+
+- Exportamos tanto la matriz de datos como los labels a nuevas variables:
+
+```{r}
+countsMatrix <- countsInfo$countsMatrix
+labels <- countsInfo$labels
+```
+
+- Consultamos los Gene Symbols y el GC content de cada gen y los valores de expresion usando la matriz de count y la anotación previamente adquirida:
+
+```{r}
+myAnnotation <- getGenesAnnotation(rownames(countsMatrix))
+```
+
+```{r, eval=F}
+geneExprMatrix <- calculateGeneExpressionValues(countsMatrix, annotation = myAnnotation)
+# Eliminamos filas sin anotacion de gen
+geneExprMatrix <- geneExprMatrix[!is.na(rownames(geneExprMatrix)),]
+# Guardar fichero de Expresión de Gen por agilizar futuras ejecuciones
+save(geneExprMatrix, file='geneExprMatrix')
+```
+
+```{r}
+load(file = 'geneExprMatrix')
+```
+
+- Realizamos el analisis de calidad y se seleccionan las muestras que pasen por el filtro (no outliers):
+
+```{r, eval=F}
+QAResults <- RNAseqQA(geneExprMatrix, toRemoval = TRUE, 
+                      toPNG=FALSE, toPDF=FALSE)
+save('QAResults', file = 'QAResults')
+```
+
+```{r}
+# Se cargan para su uso:
+load('QAResults')
+# Seleccionar muestras que pasen el filtro (no outliers)
+qualityMatrix <- QAResults$matrix
+qualityLabels <- labels[-which(colnames(geneExprMatrix) %in% QAResults$outliers)]
+```
+
+- Creamos el modelo SVA de variables surrogadas para tratar el efecto batch
+
+```{r, eval=F}
+# Creamos el modelo SVA de variables surrogadas para tratar el efecto batch
+batchMatrix <- batchEffectRemoval(qualityMatrix, qualityLabels, method = "sva")
+
+MATRIZ <- batchMatrix
+LABELS <- qualityLabels
+# Guardar datos de matriz de Expresión Final y Labels por agilizar futuras ejecuciones
+save(MATRIZ, file = 'MATRIZ')
+save(LABELS, file = 'LABELS')
+```
+
+```{r}
+load(file = 'MATRIZ')
+load(file = 'LABELS')
+
+#rownames(MATRIZ)<- make.names(rownames(MATRIZ))
+```
+
+Así, en el siguiente gráfico se muestran un boxplot ordenado que representa cómo los datos (en este caso, los valores en batchMatrix) se distribuyen para cada grupo definido por las etiquetas qualityLabels. Esto es útil para ver si las muestras se agrupan bien por condición biológica y si el efecto batch se ha corregido adecuadamente:
+
+```{r}
+#png('b.png', width = 800, height = 700)
+dataPlot(MATRIZ, qualityLabels, mode = "orderedBoxplot")
+```
+
+# 2.1. Tabla con número de genes para distintas combinaciones de LFC y COV.
+
+- Primero, se hace una subdivisión inicial Trn-Test y preparar CV para pruebas definitivas y escoger huella final:
+
+```{r, results='hide'}
+require(CORElearn)
+set.seed(19)
+nfolds<- 5
+folds<-cvGenStratified(LABELS, nfolds)
+
+nData<-dim(MATRIZ)[1]
+indexTest<-which(folds ==1) # para ejecuciones no CV
+indexTrn<-which(folds != 1) # para ejecuciones no CV
+XTrn<-MATRIZ[, indexTrn]
+XTest<-MATRIZ[,indexTest]
+YTrn<-LABELS[indexTrn]
+YTest<-LABELS[indexTest]
+```
+
+
+- Del TRAIN se propone extraer genes diferencialmente expresados (DE): vamos a jugar con diferentes valores de COV y LFC:
+
+```{r, eval=F, results='hide'}
+# Definir los valores de LFC y COV a probar
+LFC_values <- c(0.1, 0.15, 0.25,0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 1, 1.5) 
+COV_values <- c(1)
+
+# Crear una lista vacía para almacenar los resultados
+results <- data.frame(LFC = numeric(0), COV = numeric(0), NumGenes = numeric(0))
+
+# Función para extraer los genes diferencialmente expresados con LFC y COV específicos
+for (LFC in LFC_values) {
+  for (COV in COV_values) {
+    tryCatch({
+      # Ejecutar la función DEGsExtraction para esta combinación de LFC y COV
+      DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = LFC, cov = COV, pvalue=0.001)
+      
+      # Contar el número de genes DEGs (filas de DEGs_Matrix)
+      num_genes <- nrow(DEGsInfo$DEG_Results$DEGs_Matrix)
+      
+      # Agregar los resultados a la tabla
+      results <- rbind(results, data.frame(LFC = LFC, COV = COV, NumGenes = num_genes))
+    }, error = function(e) {
+      # Si ocurre un error (por ejemplo, si no hay genes DEGs), asignar 0 genes
+      results <- rbind(results, data.frame(LFC = LFC, COV = COV, NumGenes = 0))
+      
+      # Mostrar un mensaje informativo sobre el error
+      message(paste("Error con lfc =", LFC, "y cov =", COV, ": ", e$message))
+    })
+  }
+}
+
+results
+save(results, file='results')
+```
+
+```{r}
+load('results')
+results
+```
+
+- Como lo conveniente es que salga un número de genes entre 50-300 aproximadamente, filtramos los resultados obtenido anteriormente:
+
+```{r}
+resultado_filtrados <- results[results$NumGenes >= 50 & results$NumGenes <= 300, ]
+resultado_filtrados
+```
+
+- Boxplot y Heatmap de expresion de los 6 DEGs con número de genes entre 50-300:
+Observando lo anterior elegimos, por ejemplo, lfc = 0.45 y cov = 1 para obtener la DEGsMatrix.
+
+```{r}
+DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = 0.45, cov = 1, pvalue=0.001)
+DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
+#png('2b.png', width = 800, height = 600)
+dataPlot(DEGsMatrix[1:6,], YTrn, mode = "genesBoxplot")
+#png('3b.png', width = 800, height = 600)
+dataPlot(DEGsMatrix[1:6,], YTrn, mode = "heatmap")
+```
+# 3. Selección de características y clasificación con KnowSeq
+
+A continuación, se analizarán y compararán los resultados de los tres algoritmos de selección de características y los tres clasificadores disponibles en la herramienta KnowSeq y el seleccionado para este trabajo: k-Nearest Neighbors (k-NN), Random Forest, Support Vector Machines (SVM) y Regresión Logística multiclase. Para cada clasificador, se evaluará el rendimiento con los cuatro algoritmos de selección (mRMR, RF, DA y Markov Blanket), generando gráficos y tablas de confusión que muestran el desempeño de estas combinaciones.
+
+Para ello, se preparan, en primer lugar, tanto la matriz como los labels:
+
+```{r}
+MLMatrix <- t(DEGsMatrix)
+MLLabels <- YTrn
+```
+
+
+Los cuatro rankings para la selección de características son:
+
+```{r, results='hide', eval=FALSE}
+FSRankingDA <- featureSelection(MLMatrix, MLLabels, mode = "da", vars_selected = colnames(MLMatrix), disease='BrainCancer')
+save(FSRankingDA, file='FSRankingDA')
+```
+
+```{r, results='hide'}
+FSRankingMRMR <- featureSelection(MLMatrix, MLLabels, mode = "mrmr", vars_selected = colnames(MLMatrix))
+FSRankingRF <- featureSelection(MLMatrix, MLLabels, mode = "rf", vars_selected = colnames(MLMatrix))
+load('FSRankingDA')
+```
+
+Implementación del algoritmo de selección de características Markov Blanket:
+
+```{r, eval=F}
+library(infotheo)  # Para calcular información mutua
+
+# Función para calcular la información mutua entre dos variables
+calculate_mutual_info <- function(X, Y) {
+  # Discretizar las variables y calcular la información mutua
+  return(mutinformation(discretize(X), discretize(Y)))
+}
+
+# Algoritmo hacia atrás Markov Blanket
+featureSelection_MB <- function(data, target) {
+   # Asegurarse de que 'data' sea una matriz y 'target' sea un vector
+  if (!is.matrix(data)) {
+    stop("La variable 'data' debe ser una matriz.")
+  }
+  if (!is.vector(target)) {
+    stop("La variable 'target' debe ser un vector.")
+  }
+  
+  # Inicializar el conjunto de características (columnas de la matriz)
+  XG <- colnames(data)  # Conjunto de todas las características
+  
+  # Asegurar que el vector 'target' tenga la misma longitud que las filas de 'data'
+  if (length(target) != nrow(data)) {
+    stop("El tamaño de 'target' no coincide con el número de filas de 'data'.")
+  }
+
+  # Lista para almacenar las pérdidas de las características
+  feature_loss <- numeric(length(XG))  # Para almacenar las pérdidas por eliminar cada característica
+  
+  # Iterar hasta que el conjunto de características sea pequeño
+  while (length(XG) > 0) {
+    # Inicializar el vector de pérdidas
+    loss_values <- numeric(length(XG))  
+    
+    # Calcular las pérdidas para cada característica
+    for (i in 1:length(XG)) {
+      Xj <- XG[i]
+      
+      # Obtener el marco de Markov Mj (las características más informativas respecto a Xj)
+      Mj <- setdiff(XG, Xj)  # Inicializamos Mj sin Xj (esto es un proxy de MB)
+      
+      # Verificar si hay suficientes columnas en Mj para realizar el cálculo de información mutua
+      if (length(Mj) == 0) {
+        next
+      }
+      
+      # Calcular la información mutua I({Mj ∪ Xj}, Y)
+      IMjXj_Y <- tryCatch({
+        calculate_mutual_info(data[, c(Mj, Xj)], target)
+      }, error = function(e) {
+        NA  # Si ocurre un error, devolver NA
+      })
+      
+      # Calcular la información mutua I(Mj, Y)
+      IMj_Y <- tryCatch({
+        calculate_mutual_info(data[, Mj], target)
+      }, error = function(e) {
+        NA  # Si ocurre un error, devolver NA
+      })
+      
+      # Si alguna de las informaciones mutuas no es válida (NA), no calcular la pérdida
+      if (is.na(IMjXj_Y) | is.na(IMj_Y)) {
+        loss_values[i] <- NA
+      } else {
+        # Calcular la pérdida para Xj
+        loss_values[i] <- IMjXj_Y - IMj_Y
+      }
+    }
+    
+    # Si todas las pérdidas son NA, detener el proceso
+    if (all(is.na(loss_values))) {
+      cat("Todas las pérdidas son NA. Deteniendo el algoritmo.\n")
+      break
+    }
+    
+    # Filtrar las pérdidas no-NA y seleccionar la característica con la menor pérdida
+    valid_loss_values <- loss_values[is.finite(loss_values)]
+    
+    # Si no hay valores válidos para calcular la pérdida, detener
+    if (length(valid_loss_values) == 0) {
+      cat("No hay valores válidos para calcular las pérdidas. Deteniendo el algoritmo.\n")
+      break
+    }
+    
+    # Seleccionar la característica con la menor pérdida
+    best_feature_to_remove <- XG[which.min(valid_loss_values)]
+    
+    # Almacenar la pérdida y la característica eliminada
+    feature_loss[which(XG == best_feature_to_remove)] <- loss_values[which(XG == best_feature_to_remove)]
+    
+    # Eliminar la característica seleccionada del conjunto
+    XG <- setdiff(XG, best_feature_to_remove)
+    
+    cat("Eliminada característica:", best_feature_to_remove, "\n")
+  }
+  
+  # Crear un data frame con el nombre de la característica y su pérdida
+  feature_ranking <- data.frame(
+    Feature = colnames(data),
+    Loss = feature_loss
+  )
+  
+  # Ordenar el ranking de características por la pérdida (menor a mayor)
+  feature_ranking <- feature_ranking[order(feature_ranking$Loss), ]
+  
+  # Devolver el ranking de las características ordenado
+  
+  return(feature_ranking)
+}
+```
+
+```{r, eval=F}
+#Feature selection con Markov Blanket:
+FSRanking_MB <- featureSelection_MB(MLMatrix, MLLabels)$Feature
+save(FSRanking_MB, file='FSRanking_MB')
+```
+```{r}
+load('FSRanking_MB')
+```
+
+## 3.1. Clasificador k-NN
+
+Calculados los rankings de carcaterísticas, comencemos con el clasificador k-NN.
+
+### 3.1.1. Selección de características con FSRankingMRMR:
+
+Esta sección se centra en la evaluación del rendimiento del modelo de clasificación basado en los k-Vecinos más cercanos (KNN) utilizando una selección de características mediante el método mRMR (Minimum Redundancy Maximum Relevance). Primero, se entrena el modelo, `knn_trn_mrmr`, utilizando la función `knn_trn` con un subconjunto de 10 biomarcadores seleccionados, `FSRankingMRMR[1:10]`, evaluando su desempeño en términos de puntuación F1 y precisión. Luego, se prueba el modelo `knn_test_mrmr` con la función `knn_test`, con datos de la partición test para comparar los resultados de entrenamiento y prueba. Finalmente, se visualizan las métricas mediante gráficos comparativos para analizar la efectividad del modelo.
+
+```{r,  results='hide'}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+knn_trn_mrmr<- knn_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingMRMR[1:10])) 
+knn_results_mrmr <- rbind(knn_trn_mrmr$F1Info$meanF1[1:10],knn_trn_mrmr$accuracyInfo$meanAccuracy)
+```
+
+```{r, echo=F}
+#dataPlot(knn_results_mrmr, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r, results='hide'}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+knn_test_mrmr<-knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = names(FSRankingMRMR[1:10]), bestK=knn_trn_mrmr$bestK)
+knn_results_mrmr_test <- rbind(knn_trn_mrmr$F1Info$meanF1[1:10], knn_test_mrmr$f1Vector, knn_trn_mrmr$accuracyInfo$meanAccuracy, knn_test_mrmr$accVector)
+```
+
+```{r, echo=F}
+#dataPlot(knn_results_mrmr_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+```{r, echo=F}
+png('f1.png',width = 500, height = 300)
+num_genes <- 1:10
+Trn_F1 <- knn_results_mrmr_test[1,num_genes]
+Test_F1 <- knn_results_mrmr_test[2,num_genes]
+Trn_Acc <- knn_results_mrmr_test[3,num_genes]
+Test_Acc <- knn_results_mrmr_test[4,num_genes]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+Cuando num_genes = 5, se estabiliza las curvas alcanzando el 60% de acierto (accuracy) y de F1 para la evaluación del conjunto train y test. Comprobamos esta información con la matriz de confusión para el conjunto test:
+
+```{r,echo=F}
+#png('m1.png', width = 500, height = 400)
+dataPlot(knn_test_mrmr$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
+#dev.off()
+```
+
+### 3.1.2. Selección de características con FSRankingRF:
+
+Utilicemos ahora las 10 primeras características seleccionadas con Random Forest para entrenar el modelo 
+
+```{r, results='hide'}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+knn_trn_rf <- knn_trn(MLMatrix, MLLabels, vars_selected = FSRankingRF[1:10])
+knn_results_rf <- rbind(knn_trn_rf$F1Info$meanF1[1:10],knn_trn_rf$accuracyInfo$meanAccuracy)
+```
+
+```{r, echo=F}
+#dataPlot(knn_results_rf, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+```{r, results='hide'}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+knn_test_rf <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected= FSRankingRF[1:10], bestK=knn_trn_rf$bestK)
+knn_results_rf_test <- rbind(knn_trn_rf$F1Info$meanF1[1:10], knn_test_rf$f1Vector, knn_trn_rf$accuracyInfo$meanAccuracy, knn_test_rf$accVector)
+```
+
+```{r, echo=F}
+#dataPlot(knn_results_rf_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+```{r, echo=F}
+#png('f2.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- knn_results_rf_test[1,num_genes]
+Test_F1 <- knn_results_rf_test[2,num_genes]
+Trn_Acc <- knn_results_rf_test[3,num_genes]
+Test_Acc <- knn_results_rf_test[4,num_genes]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+
+Mientras que el accuracy se mantiene muy constante para el conjunto train, cuando num_genes está entre 3 y 6, el accuracy comienza a superar el 60%. Comprobemos esta información con la matriz de confusión para el conjunto test. En primer lugar, para una huella de tres genes:
+
+```{r}
+#png('m2.png', width = 500, height = 400)
+dataPlot(knn_test_rf$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+### 3.1.3. Selección de variables con FSRankingDA:
+
+
+```{r, results='hide'}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+knn_trn_da <- knn_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingDA[1:20]))
+knn_results_da <- rbind(knn_trn_da$F1Info$meanF1[1:20],knn_trn_da$accuracyInfo$meanAccuracy)
+```
+
+```{r, echo=F}
+#dataPlot(knn_results_da, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+```{r, results='hide'}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+knn_test_da <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected= names(FSRankingDA[1:20]), bestK=knn_trn_da$bestK)
+knn_results_da_test <- rbind(knn_trn_da$F1Info$meanF1[1:20], knn_test_da$f1Vector, knn_trn_da$accuracyInfo$meanAccuracy, knn_test_da$accVector)
+```
+
+```{r, echo=F}
+#dataPlot(knn_results_da_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+```{r,echo=FALSE}
+#png('f3.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- knn_results_da_test[1,num_genes]
+Test_F1 <- knn_results_da_test[2,num_genes]
+Trn_Acc <- knn_results_da_test[3,num_genes]
+Test_Acc <- knn_results_da_test[4,num_genes]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+Parece que a partir de 10 genes, dejan de haber picos muy pronunciados para el train. Sin embargo, a partir de ese valor el F1 y el accuracy del conjunto test están entorno al 50%, luego, no lograremos una bune clasificación a menos que escojamos un número muy elevado de genes. Se contrasta esta información con la matriz de confusión para el conjunto test: 
+
+```{r, echo=F}
+#png('m3.png', width = 500, height = 400)
+dataPlot(knn_test_da$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+### 3.1.4. Selección de variables con FSRanking_MB:
+Por último, se entrena el modelo `knn_trn_mb` con el ranking creado con el método Markov Blanket y se ajusta el modelo test `knn_test_mb` con el mejor k obtenido en el entrenamiento:
+
+```{r, results='hide'}
+knn_trn_mb <- knn_trn(MLMatrix, MLLabels, vars_selected = FSRanking_MB[1:20])
+knn_results_mb <- rbind(knn_trn_mb$F1Info$meanF1[1:20],knn_trn_mb$accuracyInfo$meanAccuracy)
+knn_test_mb <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_MB[1:20], bestK=knn_trn_mb$bestK)
+knn_results_mb_test <- rbind(knn_trn_mb$F1Info$meanF1[1:20], knn_test_mb$f1Vector, knn_trn_mb$accuracyInfo$meanAccuracy, knn_test_mb$accVector)
+```
+
+```{r,echo=FALSE}
+#png('f4.png',width = 800, height = 600)
+num_genes <- 1:15
+Trn_F1 <- knn_results_mb_test[1,num_genes]
+Test_F1 <- knn_results_mb_test[2,num_genes]
+Trn_Acc <- knn_results_mb_test[3,num_genes]
+Test_Acc <- knn_results_mb_test[4,num_genes]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+Parece que sería apropiado escoger 10 genes o 14 aunque es a partir de 18 genes cuando se empieza a obtener un accuracy más alto, tanto para el train como para el test. Veamos las matrices de confusión para 10 genes, ya que una huella de 14 o 18 ya sería demasiado:
+
+
+```{r, echo=F}
+#png('m4.2.png', width = 500, height = 400)
+dataPlot(knn_test_mb$cfMats[[11]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+No se obtiene una buena clasificación para la cantidad de genes elegidos. Por tanto, la combinación clasificador-seleccionador para el ejemplo del cáncer de cerebro no es apropiada.
+
+
+### 3.1.5. Conclusiones 
+
+Para el clasificador k-NN, el algoritmo de selección de selección de características mRMR es el que mejor porcetajes de Accuracy propociona: 63.46% con cinco genes seleccionados. En condiciones similares, para Random Forest, el accuracy y el F1 están entorno al 60-62% para una huella de entre 3 y 6 genes. Sin embargo, para el DA y el MB, no se llega al 55% de acierto, ni si siquiera con una huella de 10 genes. En conlusión y por simplicidad, para obtener mejores resultados con el clasificador k-NN, se podría escoger el método de selección de características mRMR y una huella de cinco genes.
+
+## 3.2. Clasificador RandomForest
+
+En esta sección se repetirá el procedimiento aplicado con el algoritmo k-NN (k-Vecinos más cercanos) utilizando los cuatro rankings de características disponibles. Se evaluará el rendimiento del modelo en términos de métricas de clasificación como precision y F1-score , tanto en los datos de entrenamiento como de prueba. Posteriormente, se compararán los resultados obtenidos para cada ranking con el fin de determinar qué características permiten una mejor clasificación de los tres tipos de cáncer de cerebro analizados.
+
+### 3.2.1. Selección de variables con FSRankingMRMR
+
+Definamos los modelos de entrenamiento y test, `rf_trn_mrmr` y `rf_test_mrmr`, respectivamente, haciendo uso de las funciones `rf_trn` y `rf_test`.
+
+```{r,  results='hide', eval=F}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+rf_trn_mrmr<- rf_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingMRMR[1:10]),numFold = 5)
+save(rf_trn_mrmr, file='rf_trn_mrmr')
+```
+```{r}
+load('rf_trn_mrmr')
+rf_results_mrmr <- rbind(rf_trn_mrmr$F1Info$meanF1[1:10],rf_trn_mrmr$accuracyInfo$meanAccuracy)
+#dataPlot(rf_results_mrmr, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r,  results='hide', eval=F}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+rf_test_mrmr <- rf_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected= names(FSRankingMRMR[1:10]),bestParameters=rf_trn_mrmr$bestParameters)
+
+save(rf_test_mrmr, file='rf_test_mrmr')
+```
+
+```{r}
+load('rf_test_mrmr')
+rf_results_mrmr_test <- rbind(rf_trn_mrmr$F1Info$meanF1[1:10], rf_test_mrmr$f1Vector, rf_trn_mrmr$accuracyInfo$meanAccuracy, rf_test_mrmr$accVector)
+#dataPlot(rf_results_mrmr_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r,echo=FALSE}
+#png('f5.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- rf_results_mrmr_test[1,1:10]
+Test_F1 <- rf_results_mrmr_test[2,1:10]
+Trn_Acc <- rf_results_mrmr_test[3,1:10]
+Test_Acc <- rf_results_mrmr_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+De la gráfica anterior destaca la armonía entre el accuracy y el F1 para el conjunto test y train. En este caso, se comienzan a obtener mejores valores de accuracy y F1 para train con una huella de 4 genes, aunque después haya un descenso del porcentaje de acierto paulatino para el conjunto test. Para comprobar numéricamente las metricas se presenta la matriz de confusión para el conjunto test:
+
+```{r, echo=F}
+#png('m5.png', width=500, height = 400)
+dataPlot(rf_test_mrmr$cfMats[[6]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+Este es el modelo con mayor porcentaje de acierto y menor huella hasta el momento.
+
+### 3.2.2. Selección de variables con FSRankingRF
+
+Se definen de la misma manera los modelos `rf_trn_rf` y `rf_test_rf`, haciendo uno del Ranking creado a partir de Random Forest.
+
+```{r,  results='hide', eval=F}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+rf_trn_rf<- rf_trn(MLMatrix, MLLabels, vars_selected = (FSRankingRF[1:10]),numFold = 5)
+save(rf_trn_rf, file='rf_trn_rf')
+```
+
+```{r}
+load('rf_trn_rf')
+rf_results_rf <- rbind(rf_trn_rf$F1Info$meanF1[1:10],rf_trn_rf$accuracyInfo$meanAccuracy)
+#dataPlot(rf_results_rf, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r,  results='hide', eval=F}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+rf_test_rf <- rf_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = (FSRankingRF[1:10]), bestParameters=rf_trn_rf$bestParameters)
+save(rf_test_rf, file='rf_test_rf')
+```
+
+```{r}
+load('rf_test_rf')
+rf_results_rf_test <- rbind(rf_trn_rf$F1Info$meanF1[1:10], rf_test_rf$f1Vector, rf_trn_rf$accuracyInfo$meanAccuracy, rf_test_rf$accVector)
+#dataPlot(rf_results_rf_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r,echo=FALSE}
+#png('f6.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- rf_results_rf_test[1,1:10]
+Test_F1 <- rf_results_rf_test[2,1:10]
+Trn_Acc <- rf_results_rf_test[3,1:10]
+Test_Acc <- rf_results_rf_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+Como en el caso anterior, la mejor huella es cuando num_genes = 2. A continuación, se muestra la matriz de confusión para el conjunto test, con el objetivo de porder hacer conclusiones más fiables:
+
+```{r, echo=F}
+#png('m6.png', width=500, height = 400)
+dataPlot(rf_test_rf$cfMats[[6]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+Destaca que el accuracy en este caso y en el anterior para una huella de 2 genes, es el mismo. Por tanto, para distinguirlos podríamos fijarnos en que el F1-score para el ranking del método mRMR (59.1%) es algo mayor que en este caso.
+
+### 3.2.3. Selección de variables con FSRankingDA
+
+De la misma forma, se ajustan los modelos `rf_trn_da` y `rf_test_da` para el ranking de DA. Se llevará a cabo también la evaluación del rendimiento del modelo mediante métricas como la precision y el F1-score , tanto en los datos de entrenamiento como en los de prueba.
+
+```{r,  results='hide', eval=F}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+rf_trn_da<- rf_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingDA[1:10]), numFold = 5) 
+save(rf_trn_da, file='rf_trn_da')
+```
+
+```{r}
+load('rf_trn_da')
+rf_results_da <- rbind(rf_trn_da$F1Info$meanF1[1:10],rf_trn_da$accuracyInfo$meanAccuracy)
+#dataPlot(rf_results_da, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r, results='hide', eval=F}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+rf_test_da <- rf_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = names(FSRankingDA[1:10]), bestParameters=rf_trn_da$bestParameters)
+save(rf_test_da, file='rf_test_da')
+```
+
+```{r}
+load('rf_test_da')
+rf_results_da_test <- rbind(rf_trn_da$F1Info$meanF1[1:10], rf_test_da$f1Vector, rf_trn_da$accuracyInfo$meanAccuracy, rf_test_da$accVector)
+#dataPlot(rf_results_da_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r,echo=FALSE}
+#png('f7.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- rf_results_da_test[1,1:10]
+Test_F1 <- rf_results_da_test[2,1:10]
+Trn_Acc <- rf_results_da_test[3,1:10]
+Test_Acc <- rf_results_da_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+Se observa que, en este caso, el F1-score y el accuracy son más bajos. Además, el accuracy y el F1 del train, a partir de num_genes = 4, parece que aumenta pero a penas alcanza el 60%. Veamos lo explicado en la siguiente matriz de confusión para el conjunto test:
+
+```{r, echo=F}
+#png('m7.png', width=500, height = 400)
+dataPlot(rf_test_da$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+Con la mejor huella para el conjunto train, el test a penas acierta en el 50% de las ocasiones.
+
+### 3.2.4. Selección de variables con FSRankingMB
+
+Finalmente, busquemos la huella para el Ranking de MB, entrenando los modelos `rf_trn_mb` y `rf_test_mb`.
+
+```{r, eval=F}
+rf_trn_mb <- rf_trn(MLMatrix, MLLabels, vars_selected = FSRanking_MB[1:10])
+save(rf_trn_mb, file='rf_trn_mb')
+```
+```{r}
+load('rf_trn_mb')
+```
+
+```{r}
+rf_results_mb <- rbind(rf_trn_mb$F1Info$meanF1[1:10],rf_trn_mb$accuracyInfo$meanAccuracy)
+rf_test_mb <- rf_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_MB[1:10], bestParameters = rf_trn_mb$bestParameters)
+rf_results_mb_test <- rbind(rf_trn_mb$F1Info$meanF1[1:10], rf_test_mb$f1Vector, rf_trn_mb$accuracyInfo$meanAccuracy, rf_test_mb$accVector)
+```
+
+
+```{r,echo=FALSE}
+#png('f8.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- rf_results_mb_test[1,1:10]
+Test_F1 <- rf_results_mb_test[2,1:10]
+Trn_Acc <- rf_results_mb_test[3,1:10]
+Test_Acc <- rf_results_mb_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+Destaca el descenso del F1-score para el conjunto train a partir de 3 genes. Elegimos esta huella aún observando que el accuracy del train está entorno al 50%. Veamos lo obtenido para el conjunto test en la siguiente matriz de confusión:
+
+```{r, echo=F}
+#png('m8.png', width=500, height = 400)
+dataPlot(rf_test_da$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+### 3.2.5. Conclusiones 
+
+Si nos fijamos en el porcentaje de acierto del clasificador Random Forest, si seleccionamos características con mRMR, el accuracy y el F1 del conjunto test están entorno al 64.4% y 57.4%, respectivamente, con una huella de 4 genes. Para una huella de 2 genes, con RF se obtienen unos porcentajes de acierto y F1 de 65.4% y 58.1%, respectivamente. En este último caso, además el F1 es algo superior para el conjunto test. Por otro lado, si observamos la matriz de confusión del seleccionador de características DA o MB se concluye que los porcentajes de acierto son menores que los anteriores, estando entrono al 50%, y no siendo, por tanto, buenas opciones.
+
+En conclusión, para el clasificador Random Forest se podría elegir RF como seleccionador de características con una huella de 2 genes. 
+
+
+## 3.3. Clasificador SVM
+
+En esta sección se abordará el entrenamiento de los modelos train y test del clasificador SVM (Support Vector Machine) para la clasificación de los tres tipos de cáncer cerebral. A lo largo de esta sección se utilizaran las funciones `svm_trn` y `svm_test2`. Esta última función es la misma que la función del KnowSeq `svm_test` pero con los arreglos que se indican para el buen funcionamiento en estro problema:
+
+```{r}
+svm_test2 <-function(train,labelsTrain,test,labelsTest,vars_selected,bestParameters){
+
+  if(!is.data.frame(train) && !is.matrix(train)){
+    
+    stop("The train argument must be a dataframe or a matrix.")
+    
+  }
+  
+  if(dim(train)[1] != length(labelsTrain)){
+    
+    stop("The length of the rows of the argument train must be the same than the length of the lablesTrain. Please, ensures that the rows are the samples and the columns are the variables.")
+    
+  }
+  
+  if(!is.character(labelsTrain)  && !is.factor(labelsTrain)){stop("The class of the labelsTrain parameter must be character vector or factor.")}
+  if(is.character(labelsTrain)){ labelsTrain <- as.factor(labelsTrain) }
+  
+  if(!is.character(labelsTest)  && !is.factor(labelsTest)){stop("The class of the labelsTest parameter must be character vector or factor.")}
+  if(is.character(labelsTest)){ labelsTest <- as.factor(labelsTest) }
+  
+  if(!is.data.frame(test) && !is.matrix(test)){
+    
+    stop("The test argument must be a dataframe or a matrix.")
+    
+  }
+  
+  if(dim(test)[1] != length(labelsTest)){
+    
+    stop("The length of the rows of the argument test must be the same than the length of the lablesTest. Please, ensures that the rows are the samples and the columns are the variables.")
+    
+  }
+  
+  train <- as.data.frame(apply(train,2,as.double))
+  train <- train[,vars_selected]
+  test <- as.data.frame(apply(test,2,as.double))
+  test <- test[,vars_selected]
+  
+  train = vapply(train, function(x){ 
+    max <- max(x)
+    min <- min(x)
+    if(max >  min){
+      x <- ((x - min) / (max - min)) * 2 - 1
+    }
+    else{
+      x
+    }}, double(nrow(train)))
+  
+  train <- as.data.frame(train)
+  
+  test = vapply(test, function(x){ 
+    max <- max(x)
+    min <- min(x)
+    if(max >  min){
+      x <- ((x - min) / (max - min)) * 2 - 1
+    }
+    else{
+      x
+    }}, double(nrow(test)))
+  
+  test <- as.data.frame(test)
+
+  accVector <- double()
+  sensVector <- double()
+  specVector <- double()
+  f1Vector <- double()
+  cfMatList  <- list()
+  colNames <- colnames(train)
+  for(i in seq_len(dim(test)[2])){
+    cat(paste("Testing with ", i," variables...\n",sep=""))
+    columns <- make.names(c(colNames[seq(i)])) # make.names()convierte los nombres en identificadores sintácticamente válidos
+    tr_ctr <- trainControl(method="none")
+    colnames(train)<-make.names(colnames(train)) # se alteran los nombres para que coincidan con los de las columnas
+    dataForTrt <- data.frame(cbind(subset(train, select=columns),labelsTrain))
+    colnames(train)[seq(i)] <- make.names(columns)
+    svm_model <- train(labelsTrain ~ ., data = dataForTrt, type = "C-svc", 
+                       method = "svmRadial", preProc = c("center", "scale"),
+                       trControl = tr_ctr, 
+                       tuneGrid=data.frame(sigma=getElement(bestParameters, "gamma"), 
+                                           C = getElement(bestParameters, "C")))
+    colnames(test)<-make.names(colnames(test)) # alteramos los nombres en el conjunto test para poder extraer del dataframe test los genes con el mismo nombre que en la variable columns
+    testX = subset(test, select=columns)
+    unkX <- testX
+    colnames(unkX) <- make.names(colnames(testX))
+    colnames(testX) <- make.names(colnames(testX))
+    predicts <- extractPrediction(list(my_svm=svm_model), testX = testX, unkX = unkX,
+                                  unkOnly = !is.null(unkX) & !is.null(testX))
+    
+    predicts <- predicts$pred
+    
+    cfMat<-confusionMatrix(predicts,labelsTest)
+    
+    if (length(levels(labelsTrain))==2){
+      sens <- cfMat$byClass[[1]]
+      spec <- cfMat$byClass[[2]]
+      f1 <- cfMat$byClass[[7]]
+    } else{
+      sens <- mean(cfMat$byClass[,1])
+      spec <- mean(cfMat$byClass[,2])
+      cfMat$byClass[,7][is.na(cfMat$byClass[,7])] <- 0 
+      # CAMBIO:
+      # Es mejor reemplazar los valores NA en esta etapa para permitir que el F1-score se grafique correctamente. 
+      # Si el reemplazo se realiza después, el promedio de los tres F1-scores inicialmente resultará en NA y luego        en cero, lo que excluye el F1 de las demás clases. 
+      # Reemplazar el NA aquí garantiza que el cálculo de la media considere un F1 de 0 en caso de que la precisión       sea NA y el recall sea 0. Esto sucede cuando una clase no es predicha ni correctamente ni incorrectamente, 
+      # es decir, cuando el número de falsos positivos y falsos negativos es 0.
+      f1 <- mean(cfMat$byClass[,7])
+    }
+    
+    cfMatList[[i]] <- cfMat
+    accVector[i] <- cfMat$overall[[1]]
+    sensVector[i] <- sens
+    specVector[i] <- spec
+    f1Vector[i] <- f1
+    
+    #if(is.na(f1Vector[i])) f1Vector[i] <- 0 
+  }
+
+  cat("Classification done successfully!\n")
+  names(accVector) <- vars_selected
+  names(sensVector) <- vars_selected
+  names(specVector) <- vars_selected
+  names(f1Vector) <- vars_selected
+
+  results <- list(cfMatList,accVector,sensVector,specVector,f1Vector)
+  names(results) <- c("cfMats","accVector","sensVector","specVector","f1Vector")
+  invisible(results)
+
+}
+```
+
+Realizamos el mismo cambio relativo al cálculo del valor F1 para el código fuente de la función `svm_train`:
+
+```{r}
+svm_trn <- function(data, labels, vars_selected, numFold = 10) {
+  if (!is.data.frame(data) && !is.matrix(data)) {
+    stop("The data argument must be a dataframe or a matrix.")
+  }
+  if (dim(data)[1] != length(labels)) {
+    stop("The length of the rows of the argument data must be the same than the length of the lables. Please, ensures that the rows are the samples and the columns are the variables.")
+  }
+  
+  if (!is.character(labels) && !is.factor(labels)) {
+    stop("The class of the labels parameter must be character vector or factor.")
+  }
+  if (is.character(labels)) {
+    labels <- as.factor(labels)
+  }
+  
+  if (numFold %% 1 != 0 || numFold == 0) {
+    stop("The numFold argument must be integer and greater than 0.")
+  }
+  
+  data <- as.data.frame(apply(data, 2, as.double))
+  data <- data[, vars_selected]
+  
+  data <- vapply(data, function(x) {
+    max <- max(x)
+    min <- min(x)
+    if(max >  min){
+      x <- ((x - min) / (max - min)) * 2 - 1
+    }
+    else{
+      x
+    }
+  }, double(nrow(data)))
+  
+  data <- as.data.frame(data)
+  
+  fitControl <- trainControl(method = "cv", number = 10)
+  cat("Tuning the optimal C and G...\n")
+  
+  grid_radial <- expand.grid(
+    sigma = c(
+      0, 0.01, 0.02, 0.025, 0.03, 0.04,
+      0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.25, 0.5, 0.75, 0.9
+    ),
+    C = c(
+      0.01, 0.05, 0.1, 0.25, 0.5, 0.75,
+      1, 1.5, 2, 5
+    )
+  )
+  
+  dataForTunning <- cbind(data, labels)
+  colnames(dataForTunning) <- make.names(colnames(dataForTunning))
+  Rsvm_sb <- train(labels ~ ., data = dataForTunning, type = "C-svc", method = "svmRadial", preProc = c("center", "scale"), trControl = fitControl, tuneGrid = grid_radial)
+  
+  bestParameters <- c(C = Rsvm_sb$bestTune$C, gamma = Rsvm_sb$bestTune$sigma)
+  cat(paste("Optimal cost:", bestParameters[1], "\n"))
+  cat(paste("Optimal gamma:", bestParameters[2], "\n"))
+  
+  acc_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  sens_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  spec_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  f1_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  cfMatList <- list()
+  # compute size of val fold
+  lengthValFold <- dim(data)[1]/numFold
+  
+  # reorder the data matrix in order to have more
+  # balanced folds
+  positions <- rep(seq_len(dim(data)[1]))
+  randomPositions <- sample(positions)
+  data <- data[randomPositions,]
+  labels <- labels[randomPositions]
+
+  for (i in seq_len(numFold)) {
+    cat(paste("Training fold ", i, "...\n", sep = ""))
+    
+    # obtain validation and training folds
+    valFold <- seq(round((i-1)*lengthValFold + 1 ), round(i*lengthValFold))
+    trainDataCV <- setdiff(seq_len(dim(data)[1]), valFold)
+    testDataset<- data[valFold,]
+    trainingDataset <- data[trainDataCV,]
+    labelsTrain <- labels[trainDataCV]
+    labelsTest <- labels[valFold]
+    colNames <- colnames(trainingDataset)
+    
+    for (j in seq_len(length(vars_selected))) {
+      columns <- c(colNames[seq(j)])
+      tr_ctr <- trainControl(method="none")
+      dataForTrt <- data.frame(cbind(subset(trainingDataset, select=columns),labelsTrain))
+      colnames(dataForTrt)[seq(j)] <- make.names(columns)
+      svm_model <- train(labelsTrain ~ ., data = dataForTrt, type = "C-svc", 
+                         method = "svmRadial", preProc = c("center", "scale"),
+                         trControl = tr_ctr, 
+                         tuneGrid=data.frame(sigma = bestParameters[2], C = bestParameters[1]))
+      
+      testX = subset(testDataset, select=columns)
+      unkX <- testX
+      colnames(unkX) <- make.names(colnames(testX))
+      colnames(testX) <- make.names(colnames(testX))
+      predicts <- extractPrediction(list(my_svm=svm_model), testX = testX, unkX = unkX,
+                                    unkOnly = !is.null(unkX) & !is.null(testX))
+      
+      predicts <- predicts$pred
+      
+      cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
+      acc_cv[i, j] <- cfMatList[[i]]$overall[[1]]
+      
+      if (length(levels(labelsTrain))==2){
+        sens <- cfMatList[[i]]$byClass[[1]]
+        spec <- cfMatList[[i]]$byClass[[2]]
+        f1 <- cfMatList[[i]]$byClass[[7]]
+      } else{
+        sens <- mean(cfMatList[[i]]$byClass[,1])
+        spec <- mean(cfMatList[[i]]$byClass[,2])
+        cfMatList[[i]]$byClass[,7][is.na(cfMatList[[i]]$byClass[,7])] <- 0 # CAMBIO
+        f1 <- mean(cfMatList[[i]]$byClass[,7])
+      }
+      
+      sens_cv[i, j] <- sens
+      spec_cv[i, j] <- spec
+      f1_cv[i, j] <- f1
+      
+      if(is.na(sens_cv[i,j])) sens_cv[i,j] <- 0
+      if(is.na(spec_cv[i,j])) spec_cv[i,j] <- 0
+      if(is.na(f1_cv[i,j])) f1_cv[i,j] <- 0
+    }
+  }
+  
+  meanAcc <- colMeans(acc_cv)
+  names(meanAcc) <- colnames(acc_cv)
+  sdAcc <- apply(acc_cv, 2, sd)
+  accuracyInfo <- list(meanAcc, sdAcc)
+  names(accuracyInfo) <- c("meanAccuracy","standardDeviation")
+  
+  
+  meanSens <- colMeans(sens_cv)
+  names(meanSens) <- colnames(sens_cv)
+  sdSens <- apply(sens_cv, 2, sd)
+  sensitivityInfo <- list(meanSens, sdSens)
+  names(sensitivityInfo) <- c("meanSensitivity","standardDeviation")
+  
+  
+  meanSpec <- colMeans(spec_cv)
+  names(meanSpec) <- colnames(spec_cv)
+  sdSpec <- apply(spec_cv, 2, sd)
+  specificityInfo <- list(meanSpec, sdSpec)
+  names(specificityInfo) <- c("meanSpecificity","standardDeviation")
+  
+  
+  meanF1 <- colMeans(f1_cv)
+  names(meanF1) <- colnames(f1_cv)
+  sdF1 <- apply(f1_cv, 2, sd)
+  F1Info <- list(meanF1, sdF1)
+  names(F1Info) <- c("meanF1","standardDeviation")
+  
+  cat("Classification done successfully!\n")
+  results_cv <- list(cfMatList,accuracyInfo,sensitivityInfo,specificityInfo,F1Info,bestParameters)
+  names(results_cv) <- c("cfMats","accuracyInfo","sensitivityInfo","specificityInfo","F1Info","bestParameters")
+  invisible(results_cv)
+  
+}
+```
+
+### 3.3.1. Selección de variables con FSRankingMRMR
+
+Comenzamos con las variables seleccionadas con mRMR, entrenando los modelos `svm_trn_mrmr` y `svm_test_mrmr`.
+
+```{r, results='hide', eval=F}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+svm_trn_mrmr<- svm_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingMRMR[1:10]),numFold = 5)
+
+save(svm_trn_mrmr, file='svm_trn_mrmr')
+```
+
+```{r}
+load('svm_trn_mrmr')
+svm_results_mrmr <- rbind(svm_trn_mrmr$F1Info$meanF1[1:10],svm_trn_mrmr$accuracyInfo$meanAccuracy)
+#dataPlot(svm_results_mrmr, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+
+```{r,  results='hide'}
+svm_test_mrmr <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=names(FSRankingMRMR[1:10]), bestParameters= svm_trn_mrmr$bestParameters)
+svm_results_mrmr_test <- rbind(svm_trn_mrmr$F1Info$meanF1[1:10], svm_test_mrmr$f1Vector, svm_trn_mrmr$accuracyInfo$meanAccuracy, svm_test_mrmr$accVector)
+```
+
+
+```{r, echo=F}
+#dataPlot(svm_results_mrmr_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r,echo=FALSE}
+#png('f9.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- svm_results_mrmr_test[1,1:10]
+Test_F1 <- svm_results_mrmr_test[2,1:10]
+Trn_Acc <- svm_results_mrmr_test[3,1:10]
+Test_Acc <- svm_results_mrmr_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+En este caso, para num_genes = 6, destaca el pico de F1 para el conjunt train, por tanto, elegimos esta huella a partir de la cual no hay cambios tan bruscos. Se comprueba con la matriz de confusión para el conjunto test:
+
+```{r, echo=F}
+#png('m9.png', width=500, height = 400)
+dataPlot(svm_test_mrmr$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
+```
+Cabe destacar que ningún astocitoma u oligodendroglioma se ha predicho como glioma mixto. Sin embargo, al contrario sí y en numerosas ocasiones, 17 y 6, respectivamente.
+
+### 3.3.2. Selección de variables con FSRankingRF:
+
+En este caso, se entrenan los modelos `svm_train_rf` y `svm_test_rf`. Calculando las m-etricas correspondientes para la valoreación de la clasificación en el conjunto test. Los mejores parámetros obtenidos en este caso son C = 0.75 y gamma = 0.03.
+
+```{r,  results='hide', eval=F}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+svm_trn_rf<- svm_trn(MLMatrix, MLLabels, vars_selected = (FSRankingRF[1:10]),numFold = 5)
+save(svm_trn_rf, file='svm_trn_rf')
+```
+```{r}
+load('svm_trn_rf')
+svm_results_rf <- rbind(svm_trn_rf$F1Info$meanF1[1:10],svm_trn_rf$accuracyInfo$meanAccuracy)
+#dataPlot(svm_results_rf, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r, results='hide'}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+svm_test_rf <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = (FSRankingRF[1:10]), bestParameters= svm_trn_rf$bestParameters)
+svm_results_rf_test <- rbind(svm_trn_rf$F1Info$meanF1[1:10], svm_test_rf$f1Vector, svm_trn_rf$accuracyInfo$meanAccuracy, svm_test_rf$accVector)
+```
+
+```{r, echo=F}
+#dataPlot(svm_results_rf_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+
+```{r,echo=FALSE}
+#png('f10.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- svm_results_rf_test[1,1:10]
+Test_F1 <- svm_results_rf_test[2,1:10]
+Trn_Acc <- svm_results_rf_test[3,1:10]
+Test_Acc <- svm_results_rf_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+En este caso, elegiría una huella de 4 genes ya que, a partir de ahí, el crecimeinto del F1 y accuracy en train es gradual. Sin embargo, si observamos las métricas del conjunto test, en realidad comienzan a ascender a partir de 6 genes. Vemaos así, la matriz de confusión para el conjunto test cuando la huella es 4:
+
+```{r}
+#png('m10.png', width=500, height = 400)
+dataPlot(svm_test_rf$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+### 3.3.3. Selección de variables con FSRankingDA:
+
+Repetimos el porceso para el ranking de DA. 
+
+```{r,  results='hide', eval=F}
+# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+svm_trn_da<- svm_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingDA[1:10])) 
+save(svm_trn_da, file='svm_trn_da')
+```
+```{r}
+load('svm_trn_da')
+svm_results_da <- rbind(svm_trn_da$F1Info$meanF1[1:10],svm_trn_da$accuracyInfo$meanAccuracy)
+#dataPlot(svm_results_da, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r, results='hide'}
+# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
+svm_test_da <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = names(FSRankingDA[1:10]), bestParameters= svm_trn_da$bestParameters)
+svm_results_da_test <- rbind(svm_trn_da$F1Info$meanF1[1:10], svm_test_da$f1Vector, svm_trn_da$accuracyInfo$meanAccuracy, svm_test_da$accVector)
+```
+
+```{r, echo=F}
+#dataPlot(svm_results_da_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
+```
+
+```{r,echo=FALSE}
+#png('f11.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- svm_results_da_test[1,1:10]
+Test_F1 <- svm_results_da_test[2,1:10]
+Trn_Acc <- svm_results_da_test[3,1:10]
+Test_Acc <- svm_results_da_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l", col = )
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+
+A partir de 2 genes, aparece que el accuracy el F1 para el conjunto de entrenamiento mejora y se mantiene bastante constante. Aunque, para las métricas del conjunto test, es a partir de 5 genes cuando mejoran. Veamos la matriz de confusión para el conjunto test y una huella de dos genes:
+
+```{r,echo=F}
+#png('m11.png', width=500, height = 400)
+dataPlot(svm_test_da$cfMats[[6]]$table, MLLabels, mode = "confusionMatrix")
+```
+La clase glioma mixto no es predecida por el modelo. Además, tiene un accracy muy bajo, el cuál para una huella de 5 genes mejora al 55%. Este aumento no mejora notablemente la clasificación del modelo.
+
+### 3.3.4. Selección de variables con FSRanking_MB:
+
+Por último, veamos los resultados para el `FSRanking_MB`.
+
+```{r, eval=F}
+svm_trn_mb <- svm_trn(MLMatrix, MLLabels, vars_selected = FSRanking_MB[1:10])
+save(svm_trn_mb, file='svm_trn_mb')
+```
+```{r}
+load('svm_trn_mb')
+```
+
+```{r}
+svm_results_mb <- rbind(svm_trn_mb$F1Info$meanF1[1:10],svm_trn_mb$accuracyInfo$meanAccuracy)
+svm_test_mb <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_MB[1:10], bestParameters = svm_trn_mb$bestParameters)
+svm_results_mb_test <- rbind(svm_trn_mb$F1Info$meanF1[1:10], svm_test_mb$f1Vector, svm_trn_mb$accuracyInfo$meanAccuracy, svm_test_mb$accVector)
+```
+
+```{r,echo=FALSE}
+#png('f12.png',width = 800, height = 600)
+num_genes <- 1:10
+Trn_F1 <- svm_results_mb_test[1,1:10]
+Test_F1 <- svm_results_mb_test[2,1:10]
+Trn_Acc <- svm_results_mb_test[3,1:10]
+Test_Acc <- svm_results_mb_test[4,1:10]
+plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
+lines(num_genes, Trn_Acc,"l")
+lines(num_genes, Test_F1,"l",col = "green",lty = 2)
+lines(num_genes, Test_Acc,"l",lty = 2)
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+```
+Si nos fijamos en el accuracy y el F1 del train, podríamos escoger una huella de 2 genes. Veamos la matriz de confusión para esta huella en el conjunto test:
+
+```{r, echo=F}
+#png('m12.png', width=500, height = 400)
+dataPlot(svm_test_mb$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
+```
+Como vemos es una de las peores combinaciones clasificador-seleccionador hasta el momento.
+
+### 3.3.5. Conclusiones 
+
+En el caso del clasificador SVM, si seleccionamos características DA o con MB, se tiene un accuracy muy poco superior al 40% con una huella de 2 genes; con una opción muy baja a mejora si aumentamos esta huella. Sin embargo, para el algoritmo de selección mRMR y una huella de seis genes, el accuracy es del 62.5%, igual al del Random Forest con la misma huella. Además, para Random Forest es con el que también se obtiene mayor porcentaje de F1, 60%. Por ello, nos quedaremos con esta última combinación.
 
