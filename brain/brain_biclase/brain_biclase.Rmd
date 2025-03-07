@@ -1,17 +1,3 @@
----
-title: "brain_trabajo"
-author: "Elena Maroto Rica"
-date: "2025-01-10"
-output:
-  html_document:
-    toc: true
-    toc_depth: 3
-    toc_float: true
-  word_document:
-    toc: true
-    toc_depth: '3'
----
-
 # 1. Introducción
 
 ## 1.1. Datos bajados de GDC
@@ -28,7 +14,7 @@ library(BiocManager)
 library(org.Hs.eg.db)
 #Incluir KnowSeq y las funciones proporcionadas 
 require(KnowSeq)
-source("convert_to_counts.R")
+#source("convert_to_counts.R")
 source("geneOntologyEnrichment_updated.R")
 source("knowseqReport_updated.R")
 require("e1071")
@@ -77,20 +63,20 @@ table(Class)
 ```
 
 ```{r, eval=F}
-data.biclass.info <- data.frame(Run = Run, Path = Path, Class = Class)
-write.csv(file = "data_biclass_info.csv", x = data.biclass.info)
+data.info <- data.frame(Run = Run, Path = Path, Class = Class)
+write.csv(file = "data_info.csv", x = data.info)
 ```
 
 - Se cargan y se aunan los ficheros counts:
 
 ```{r, eval=F}
-countsInfo <- countsToMatrix("data_biclass_info.csv", extension = "")
+countsInfo <- countsToMatrix("data_info.csv", extension = "")
 #Guardar fichero de counts por agilizar futuras ejecuciones
-save(countsInfo, file='CountsInfoBiclass')
+save(countsInfo, file='CountsInfo')
 ```
 
 ```{r}
-load(file = 'countsInfoBiclass')
+load(file = 'countsInfo')
 ```
 
 - Exportamos tanto la matriz de datos como los labels a nuevas variables:
@@ -154,11 +140,35 @@ load(file = 'LABELS')
 #rownames(MATRIZ)<- make.names(rownames(MATRIZ))
 ```
 
+```{r}
+table(LABELS)
+```
+
+
+```{r}
+MATRIZ_M <- MATRIZ[, LABELS=="mixed_glioma"]
+MATRIZ <- MATRIZ[, !(LABELS=="mixed_glioma")]
+```
+
+```{r}
+print(dim(MATRIZ))
+print(dim(MATRIZ_M))
+```
+```{r}
+LABELS_M <- LABELS[LABELS=="mixed_glioma"]
+LABELS <- LABELS[!(LABELS=="mixed_glioma")]
+```
+
+```{r}
+print(length(LABELS))
+print(length(LABELS_M))
+```
+
 Así, en el siguiente gráfico se muestran un boxplot ordenado que representa cómo los datos (en este caso, los valores en batchMatrix) se distribuyen para cada grupo definido por las etiquetas qualityLabels. Esto es útil para ver si las muestras se agrupan bien por condición biológica y si el efecto batch se ha corregido adecuadamente:
 
 ```{r}
 #png('b.png', width = 800, height = 700)
-dataPlot(MATRIZ, qualityLabels, mode = "orderedBoxplot")
+dataPlot(MATRIZ, LABELS, mode = "orderedBoxplot")
 ```
 
 # 2.1. Tabla con número de genes para distintas combinaciones de LFC y COV.
@@ -185,32 +195,35 @@ YTest<-LABELS[indexTest]
 
 ```{r, eval=F, results='hide'}
 # Definir los valores de LFC y COV a probar
-LFC_values <- c(0.1, 0.15, 0.25, 0.75, 1, 1.5, 2, 2.25, 2.75, 3, 3.5) 
-COV_values <- c(1, 2, 3)
+LFC_values <- c(0.25, 0.4, 0.5, 0.6, 0.75, 1, 1.5, 2) 
+COV_values <- c(1, 2)
+p_values <- c(0.001, 0.0005, 0.0001)
 
 
 # Crear una lista vacía para almacenar los resultados
-results <- data.frame(LFC = numeric(0), COV = numeric(0), NumGenes = numeric(0))
+results <- data.frame(LFC = numeric(0), COV = numeric(0), pvalue=numeric(0), NumGenes = numeric(0))
 
 # Función para extraer los genes diferencialmente expresados con LFC y COV específicos
 for (LFC in LFC_values) {
   for (COV in COV_values) {
-    tryCatch({
-      # Ejecutar la función DEGsExtraction para esta combinación de LFC y COV
-      DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = LFC, cov = COV, pvalue=0.001)
-      
-      # Contar el número de genes DEGs (filas de DEGs_Matrix)
-      num_genes <- nrow(DEGsInfo$DEG_Results$DEGs_Matrix)
-      
-      # Agregar los resultados a la tabla
-      results <- rbind(results, data.frame(LFC = LFC, COV = COV, NumGenes = num_genes))
-    }, error = function(e) {
-      # Si ocurre un error (por ejemplo, si no hay genes DEGs), asignar 0 genes
-      results <- rbind(results, data.frame(LFC = LFC, COV = COV, NumGenes = 0))
-      
-      # Mostrar un mensaje informativo sobre el error
-      message(paste("Error con lfc =", LFC, "y cov =", COV, ": ", e$message))
-    })
+    for(p in p_values) {
+      tryCatch({
+        # Ejecutar la función DEGsExtraction para esta combinación de LFC y COV
+        DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = LFC, cov = COV, pvalue=p)
+        
+        # Contar el número de genes DEGs (filas de DEGs_Matrix)
+        num_genes <- nrow(DEGsInfo$DEG_Results$DEGs_Matrix)
+        
+        # Agregar los resultados a la tabla
+        results <- rbind(results, data.frame(LFC = LFC, COV = COV, pvalue=p, NumGenes = num_genes))
+      }, error = function(e) {
+        # Si ocurre un error (por ejemplo, si no hay genes DEGs), asignar 0 genes
+        results <- rbind(results, data.frame(LFC = LFC, COV = COV, pvalue=p, NumGenes = 0))
+        
+        # Mostrar un mensaje informativo sobre el error
+        message(paste("Error con lfc =", LFC, "y cov =", COV, ": ", e$message))
+      })
+    }
   }
 }
 
@@ -234,7 +247,7 @@ resultado_filtrados
 Observando lo anterior elegimos, por ejemplo, lfc = 0.15 y cov = 1 para obtener la DEGsMatrix.
 
 ```{r}
-DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = 0.15, cov = 1, pvalue=0.001)
+DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = 0.4, cov = 1, pvalue=0.001)
 DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
 #png('2b.png', width = 800, height = 600)
 dataPlot(DEGsMatrix[1:6,], YTrn, mode = "genesBoxplot")
@@ -388,6 +401,7 @@ featureSelection_MB <- function(data, target) {
 FSRanking_MB <- featureSelection_MB(MLMatrix, MLLabels)$Feature
 save(FSRanking_MB, file='FSRanking_MB')
 ```
+
 ```{r}
 load('FSRanking_MB')
 ```
@@ -401,7 +415,7 @@ Calculados los rankings de carcaterísticas, comencemos con el clasificador k-NN
 Esta sección se centra en la evaluación del rendimiento del modelo de clasificación basado en los k-Vecinos más cercanos (KNN) utilizando una selección de características mediante el método mRMR (Minimum Redundancy Maximum Relevance). Primero, se entrena el modelo, `knn_trn_mrmr`, utilizando la función `knn_trn` con un subconjunto de 10 biomarcadores seleccionados, `FSRankingMRMR[1:10]`, evaluando su desempeño en términos de puntuación F1 y precisión. Luego, se prueba el modelo `knn_test_mrmr` con la función `knn_test`, con datos de la partición test para comparar los resultados de entrenamiento y prueba. Finalmente, se visualizan las métricas mediante gráficos comparativos para analizar la efectividad del modelo.
 
 ```{r,  results='hide'}
-# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
+# Evaluar biomarcadores en TRN
 knn_trn_mrmr<- knn_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingMRMR[1:10])) 
 knn_results_mrmr <- rbind(knn_trn_mrmr$F1Info$meanF1[1:10],knn_trn_mrmr$accuracyInfo$meanAccuracy)
 ```
@@ -419,6 +433,7 @@ knn_results_mrmr_test <- rbind(knn_trn_mrmr$F1Info$meanF1[1:10], knn_test_mrmr$f
 ```{r, echo=F}
 #dataPlot(knn_results_mrmr_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
 ```
+
 ```{r, echo=F}
 #png('f1.png',width = 800, height = 600)
 num_genes <- 1:10
@@ -437,8 +452,10 @@ Cuando num_genes = 5, se estabiliza las curvas alcanzando el 60% de acierto (acc
 
 ```{r,echo=F}
 #png('m1.png', width = 500, height = 400)
-dataPlot(knn_test_mrmr$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(knn_test_mrmr$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
 #dev.off()
+
+#Podríamos elegir 3, pero la mejora es mínima
 ```
 
 ### 3.1.2. Selección de características con FSRankingRF:
@@ -454,6 +471,7 @@ knn_results_rf <- rbind(knn_trn_rf$F1Info$meanF1[1:10],knn_trn_rf$accuracyInfo$m
 ```{r, echo=F}
 #dataPlot(knn_results_rf, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
 ```
+
 ```{r, results='hide'}
 # Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
 knn_test_rf <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected= FSRankingRF[1:10], bestK=knn_trn_rf$bestK)
@@ -463,6 +481,7 @@ knn_results_rf_test <- rbind(knn_trn_rf$F1Info$meanF1[1:10], knn_test_rf$f1Vecto
 ```{r, echo=F}
 #dataPlot(knn_results_rf_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
 ```
+
 ```{r, echo=F}
 #png('f2.png',width = 800, height = 600)
 num_genes <- 1:10
@@ -482,14 +501,10 @@ Mientras que el accuracy se mantiene muy constante para el conjunto train, cuand
 
 ```{r}
 #png('m2.png', width = 500, height = 400)
-dataPlot(knn_test_rf$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(knn_test_rf$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
 ```
 En segundo lugar, para una huella de seis genes:
 
-```{r, echo=F}
-#png('m2.2.png',  width = 500, height = 400)
-dataPlot(knn_test_rf$cfMats[[6]]$table, MLLabels, mode = "confusionMatrix")
-```
 El umento del porcentaje de acierto es muy poco tras elegir el docle de genes. Por tanto, la huella escogida en este caso podría ser 3.
 
 ### 3.1.3. Selección de variables con FSRankingDA:
@@ -504,6 +519,7 @@ knn_results_da <- rbind(knn_trn_da$F1Info$meanF1[1:20],knn_trn_da$accuracyInfo$m
 ```{r, echo=F}
 #dataPlot(knn_results_da, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
 ```
+
 ```{r, results='hide'}
 # Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
 knn_test_da <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected= names(FSRankingDA[1:20]), bestK=knn_trn_da$bestK)
@@ -513,9 +529,10 @@ knn_results_da_test <- rbind(knn_trn_da$F1Info$meanF1[1:20], knn_test_da$f1Vecto
 ```{r, echo=F}
 #dataPlot(knn_results_da_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
 ```
+
 ```{r,echo=FALSE}
 #png('f3.png',width = 800, height = 600)
-num_genes <- 1:20
+num_genes <- 1:10
 Trn_F1 <- knn_results_da_test[1,num_genes]
 Test_F1 <- knn_results_da_test[2,num_genes]
 Trn_Acc <- knn_results_da_test[3,num_genes]
@@ -531,7 +548,7 @@ Parece que a partir de 10 genes, dejan de haber picos muy pronunciados para el t
 
 ```{r, echo=F}
 #png('m3.png', width = 500, height = 400)
-dataPlot(knn_test_da$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(knn_test_da$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
 ```
 
 ### 3.1.4. Selección de variables con FSRanking_MB:
@@ -546,7 +563,7 @@ knn_results_mb_test <- rbind(knn_trn_mb$F1Info$meanF1[1:20], knn_test_mb$f1Vecto
 
 ```{r,echo=FALSE}
 #png('f4.png',width = 800, height = 600)
-num_genes <- 1:20
+num_genes <- 1:10
 Trn_F1 <- knn_results_mb_test[1,num_genes]
 Test_F1 <- knn_results_mb_test[2,num_genes]
 Trn_Acc <- knn_results_mb_test[3,num_genes]
@@ -555,14 +572,14 @@ plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
 lines(num_genes, Trn_Acc,"l")
 lines(num_genes, Test_F1,"l",col = "green",lty = 2)
 lines(num_genes, Test_Acc,"l",lty = 2)
-legend("topleft",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
 ```
 Parece que sería apropiado escoger 10 genes o 14 aunque es a partir de 18 genes cuando se empieza a obtener un accuracy más alto, tanto para el train como para el test. Veamos las matrices de confusión para 10 genes, ya que una huella de 14 o 18 ya sería demasiado:
 
 
 ```{r, echo=F}
 #png('m4.2.png', width = 500, height = 400)
-dataPlot(knn_test_mb$cfMats[[10]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(knn_test_mb$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
 ```
 
 No se obtiene una buena clasificación para la cantidad de genes elegidos. Por tanto, la combinación clasificador-seleccionador para el ejemplo del cáncer de cerebro no es apropiada.
@@ -622,7 +639,7 @@ De la gráfica anterior destaca la armonía entre el accuracy y el F1 para el co
 
 ```{r, echo=F}
 #png('m5.png', width=500, height = 400)
-dataPlot(rf_test_mrmr$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(rf_test_mrmr$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
 ```
 
 Este es el modelo con mayor porcentaje de acierto y menor huella hasta el momento.
@@ -673,7 +690,7 @@ Como en el caso anterior, la mejor huella es cuando num_genes = 2. A continuaci�
 
 ```{r, echo=F}
 #png('m6.png', width=500, height = 400)
-dataPlot(rf_test_rf$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(rf_test_rf$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
 ```
 
 Destaca que el accuracy en este caso y en el anterior para una huella de 2 genes, es el mismo. Por tanto, para distinguirlos podríamos fijarnos en que el F1-score para el ranking del método mRMR (59.1%) es algo mayor que en este caso.
@@ -724,7 +741,7 @@ Se observa que, en este caso, el F1-score y el accuracy son más bajos. Además,
 
 ```{r, echo=F}
 #png('m7.png', width=500, height = 400)
-dataPlot(rf_test_da$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(rf_test_da$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
 ```
 
 Con la mejor huella para el conjunto train, el test a penas acierta en el 50% de las ocasiones.
@@ -766,7 +783,7 @@ Destaca el descenso del F1-score para el conjunto train a partir de 3 genes. Ele
 
 ```{r, echo=F}
 #png('m8.png', width=500, height = 400)
-dataPlot(rf_test_da$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(rf_test_da$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
 ```
 
 ### 3.2.5. Conclusiones 
@@ -1121,7 +1138,7 @@ En este caso, para num_genes = 6, destaca el pico de F1 para el conjunt train, p
 
 ```{r, echo=F}
 #png('m9.png', width=500, height = 400)
-dataPlot(svm_test_mrmr$cfMats[[6]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(svm_test_mrmr$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
 ```
 Cabe destacar que ningún astocitoma u oligodendroglioma se ha predicho como glioma mixto. Sin embargo, al contrario sí y en numerosas ocasiones, 17 y 6, respectivamente.
 
@@ -1134,6 +1151,7 @@ En este caso, se entrenan los modelos `svm_train_rf` y `svm_test_rf`. Calculando
 svm_trn_rf<- svm_trn(MLMatrix, MLLabels, vars_selected = (FSRankingRF[1:10]),numFold = 5)
 save(svm_trn_rf, file='svm_trn_rf')
 ```
+
 ```{r}
 load('svm_trn_rf')
 svm_results_rf <- rbind(svm_trn_rf$F1Info$meanF1[1:10],svm_trn_rf$accuracyInfo$meanAccuracy)
@@ -1169,7 +1187,7 @@ En este caso, elegiría una huella de 4 genes ya que, a partir de ahí, el creci
 
 ```{r}
 #png('m10.png', width=500, height = 400)
-dataPlot(svm_test_rf$cfMats[[6]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(svm_test_rf$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
 ```
 
 ### 3.3.3. Selección de variables con FSRankingDA:
@@ -1181,6 +1199,7 @@ Repetimos el porceso para el ranking de DA.
 svm_trn_da<- svm_trn(MLMatrix, MLLabels, vars_selected = names(FSRankingDA[1:10])) 
 save(svm_trn_da, file='svm_trn_da')
 ```
+
 ```{r}
 load('svm_trn_da')
 svm_results_da <- rbind(svm_trn_da$F1Info$meanF1[1:10],svm_trn_da$accuracyInfo$meanAccuracy)
@@ -1248,13 +1267,13 @@ plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
 lines(num_genes, Trn_Acc,"l")
 lines(num_genes, Test_F1,"l",col = "green",lty = 2)
 lines(num_genes, Test_Acc,"l",lty = 2)
-legend("topleft",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
 ```
 Si nos fijamos en el accuracy y el F1 del train, podríamos escoger una huella de 2 genes. Veamos la matriz de confusión para esta huella en el conjunto test:
 
 ```{r, echo=F}
 #png('m12.png', width=500, height = 400)
-dataPlot(svm_test_mb$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(svm_test_mb$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
 ```
 Como vemos es una de las peores combinaciones clasificador-seleccionador hasta el momento.
 
@@ -1311,7 +1330,7 @@ logistic_trn2 <- function(data, labels, vars_selected, numFold = 10, LOOCV = FAL
   cat("Tuning the optimal model...\n")
   
   # Use logistic regression with multinomial family for 3 classes
-  logistic_model <- train(data, labels, method = "multinom", trControl = fitControl, preProcess = c("center", "scale"))
+  logistic_model <- train(data, labels, method = "glm", trControl = fitControl, preProcess = c("center", "scale"), family = "binomial")
   
   cat(paste("Optimal model tuned.\n"))
   
@@ -1346,7 +1365,7 @@ logistic_trn2 <- function(data, labels, vars_selected, numFold = 10, LOOCV = FAL
       labelsTest <- labels[valFold]
       
       # Train logistic regression model for 3 classes
-      logistic_mod <- multinom(labelsTrain ~ ., data = trainingDataset)
+      logistic_mod <- glm(labelsTrain ~ ., data = trainingDataset, family="binomial")
       predicts <- predict(logistic_mod, testDataset)
       
       cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
@@ -1371,7 +1390,7 @@ logistic_trn2 <- function(data, labels, vars_selected, numFold = 10, LOOCV = FAL
       #if (is.na(f1_cv[i, 1])) f1_cv[i, 1] <- 0
       
       for (j in 2:length(vars_selected)) {
-        logistic_mod <- multinom(labelsTrain ~ ., data = trainingDataset[, 1:j])
+        logistic_mod <- glm(labelsTrain ~ ., data = trainingDataset[, 1:j], family="binomial")
         predicts <- predict(logistic_mod, testDataset[, 1:j])
         
         cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
@@ -1437,7 +1456,7 @@ logistic_trn2 <- function(data, labels, vars_selected, numFold = 10, LOOCV = FAL
       trainLabels <- labels[trainDataCV]
       testLabel <- labels[i]
       
-      logistic_mod <- multinom(labelsTrain ~ ., data = data[trainDataCV, , drop = FALSE])
+      logistic_mod <- glm(labelsTrain ~ ., data = data[trainDataCV, , drop = FALSE], family="binomial")
       predictLabel <- predict(logistic_mod, testData)
       
       cfMatList[[i]] <- confusionMatrix(predictLabel, testLabel)
@@ -1527,7 +1546,7 @@ logistic_test_multiclase <- function(tren, etiquetasTren, prueba, etiquetasPrueb
   best_decay <- logistic_trn_mrmr$logisticModel$finalModel$decay
   
   # Realizar predicciones en los datos de prueba usando el modelo entrenado
-  logistic_model <- multinom(etiquetasTren~., data=subset(tren, select = c(colnames(tren)[1])), decay = best_decay)
+  logistic_model <- glm(etiquetasTren~., data=subset(tren, select = c(colnames(tren)[1])), decay = best_decay, family="binomial")
   predicciones <- predict(logistic_model, subset(prueba, select = c(colnames(prueba)[1])), type = "class")
   predictScores <- predict(logistic_model,subset(prueba, select = c(colnames(prueba)[1])), type = "prob")
   
@@ -1551,7 +1570,7 @@ logistic_test_multiclase <- function(tren, etiquetasTren, prueba, etiquetasPrueb
     for (i in 2:dim(prueba)[2]) {
       cat(paste("Probando con", i, "variables...\n", sep = " "))
       
-      logistic_model2 <- multinom(etiquetasTren~., data=tren[,1:i], decay = best_decay)
+      logistic_model2 <- glm(etiquetasTren~., data=tren[,1:i], decay = best_decay, family="binomial")
       predicciones <- predict(logistic_model2, prueba[, 1:i], type = "class")
       predictScores <- predict(logistic_model2, prueba[, 1:i], type = "prob")
       
