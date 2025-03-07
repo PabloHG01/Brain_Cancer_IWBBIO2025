@@ -1,0 +1,55 @@
+---
+title: "brain_estadíos"
+author: "Elena Maroto Rica"
+date: "2025-03-07"
+output: html_document
+---
+
+```{r, results='hide', warning=FALSE, message=F, include=FALSE, echo=F}
+library(BiocManager)
+library(BiocManager)
+library(org.Hs.eg.db)
+#Incluir KnowSeq y las funciones proporcionadas 
+require(KnowSeq)
+source("convert_to_counts.R")
+source("geneOntologyEnrichment_updated.R")
+source("knowseqReport_updated.R")
+require("e1071")
+require(CORElearn)
+require("caret")
+require("praznik")
+library(caret)
+#install.packages("jsonlite")
+library('jsonlite')
+```
+
+```{r}
+load(file='samples')
+
+load(file='samples_astrocytoma')
+samples$Sample.Type[samples$File.ID %in% samples_astrocytoma$File.ID] <- 'astrocytoma'
+
+load(file='samples_mixed')
+samples$Sample.Type[samples$File.ID %in% samples_mixed$File.ID] <- 'mixed_glioma'
+
+load(file='samples_oligodendroglioma')
+samples$Sample.Type[samples$File.ID %in% samples_oligodendroglioma$File.ID] <- 'oligodendroglioma'
+```
+
+```{r}
+clinical_data <- fromJSON("clinical.cart.2025-03-06.json")
+df_clinical <- as.data.frame(clinical_data)
+```
+
+```{r}
+astrocytoma_G2 <- df_clinical[df_clinical$submitter_id %in% samples_astrocytoma$Case.ID & 
+                              df_clinical$diagnoses$tumor_grade == 'G2', ]
+astrocytoma_G3 <- df_clinical[df_clinical$submitter_id %in% samples_astrocytoma$Case.ID & 
+                              df_clinical[[6]]$tumor_grade == 'G3', ]
+
+oligodendroglioma_G2 <- df_clinical[df_clinical$submitter_id %in% samples_oligodendroglioma$Case.ID & 
+                              df_clinical[[6]][[1]]$tumor_grade == 'G2', ]
+oligodendroglioma_G3 <- df_clinical[df_clinical$submitter_id %in% samples_oligodendroglioma$Case.ID & 
+                              df_clinical[[6]][[1]]$tumor_grade == 'G3', ]
+```
+
