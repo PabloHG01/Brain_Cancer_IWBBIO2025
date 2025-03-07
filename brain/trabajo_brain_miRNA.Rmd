@@ -1,0 +1,1318 @@
+# Biología Computacional con Big Data-Omics e Ingeniería Biomédica: trabajo final de la asignatura
+
+Elena Maroto Rica y Pablo Heredero García.
+
+En este documento se incluye todo el código correspondiente al análisis de los datos de miRNA-seq.
+
+```{r, results='hide', warning=FALSE, message=F, include=FALSE}
+rm(list = ls()) #Por si queremos reiniciar el entorno de trabajo
+
+#Incluir KnowSeq y las funciones y librerías necesarias:
+require(KnowSeq)
+source("convert_to_counts.R")
+source("geneOntologyEnrichment_updated.R")
+source("knowseqReport_updated.R")
+library(tidyverse)
+require(CORElearn)
+library(BiocManager)
+library(org.Hs.eg.db)
+require("e1071")
+require("caret")
+require("praznik")
+library(caret)
+```
+
+## Preparación de los datos:
+
+Vamos a utilizar datos sobre cáncer cerebral. Concretamente, se distinguirán tres subtipos de cáncer: astrocitoma, oligodendroglioma y glioma mixto.
+
+En esta aproximación del problema se van a usar datos de miRNA-seq para construir un clasificador que pueda predecir el tipo concreto de cáncer.
+
+Los datos se han bajado del GDC Portal. Puesto que los datos descargados no tienen información acerca del tipo de cáncer de cada muestra, primero se han descargado todos los datos en conjunto, y después separadamente los de cada tipo de cáncer. De esta forma, podemos identificar el tipo de cáncer de cada ejemplo emparejando las muestras del conjunto global con las de cada subgrupo.
+
+```{r, echo=FALSE, eval=F, results='hide'}
+#Descomprimimos el conjunto total de datos:
+
+untar('brain_data_miRNAseq/all_data/gdc_download_20250110_095156.127036.tar.gz', exdir='brain_data_miRNAseq/all_data/data')
+```
+
+```{r, echo=FALSE, eval=F, results='hide'}
+#Descomprimimos los tres subconjuntos de datos correspondientes con cada subtipo:
+
+untar('brain_data_miRNAseq/data_astrocytoma/gdc_download_20250110_110745.770323.tar.gz', exdir='brain_data_miRNAseq/data_astrocytoma/data')
+
+untar('brain_data_miRNAseq/data_mixed_glioma/gdc_download_20250110_111013.097587.tar.gz', exdir='brain_data_miRNAseq/data_mixed_glioma/data')
+
+untar('brain_data_miRNAseq/data_oligodendroglioma/gdc_download_20250110_111811.547954.tar.gz', exdir='brain_data_miRNAseq/data_oligodendroglioma/data')
+```
+
+Transformamos los ficheros originales con star counts en counts simples, tanto para el conjunto global como para cada tipo de cáncer:
+
+```{r, eval=F, results='hide'}
+#Convertimos los star counts a ficheros de counts simples para los datos del conjunto global
+
+down_folder = "brain_data_miRNAseq/all_data/data/"
+sample_sheet = "brain_data_miRNAseq/all_data/gdc_sample_sheet.2025-01-10.tsv"
+
+
+samples <- convert_to_counts(down_folder, sample_sheet, outpath = "brain_data_miRNAseq/all_data/data/counts", 
+                             column_name = 'read_count', filter_lines = 0)
+
+```
+
+```{r, eval=F, results='hide'}
+#Convertimos los star counts a ficheros de counts simples para los datos de cada subconjunto:
+
+## Astrocitoma:
+down_folder = "brain_data_miRNAseq/data_astrocytoma/data/"
+sample_sheet = "brain_data_miRNAseq/data_astrocytoma/gdc_sample_sheet.2025-01-10.tsv"
+
+samples_astrocytoma <- convert_to_counts(down_folder, sample_sheet, outpath = "brain_data_miRNAseq/data_astrocytoma/data/counts", 
+                             column_name = 'read_count', filter_lines = 0)
+
+
+## Glioma mixto:
+down_folder = "brain_data_miRNAseq/data_mixed_glioma/data/"
+sample_sheet = "brain_data_miRNAseq/data_mixed_glioma/gdc_sample_sheet.2025-01-10.tsv"
+
+samples_mixed_glioma <- convert_to_counts(down_folder, sample_sheet, outpath = "brain_data_miRNAseq/data_mixed_glioma/data/counts", 
+                             column_name = 'read_count', filter_lines = 0)
+
+
+## Oligodendroglioma:
+down_folder = "brain_data_miRNAseq/data_oligodendroglioma/data/"
+sample_sheet = "brain_data_miRNAseq/data_oligodendroglioma/gdc_sample_sheet.2025-01-10.tsv"
+
+samples_oligodendroglioma <- convert_to_counts(down_folder, sample_sheet, outpath = "brain_data_miRNAseq/data_oligodendroglioma/data/counts", 
+                             column_name = 'read_count', filter_lines = 0)
+```
+
+Y ahora identificamos el tipo de cáncer de cada muestra asociando el conjunto total de datos con cada subconjunto:
+
+```{r, eval=F, results='hide'}
+# Identificamos el tipo de cáncer de cada muestra observando en qué subconjunto está cada ejemplo:
+
+samples$Sample.Type[samples$Case.ID %in% samples_astrocytoma$Case.ID] <- 'astrocytoma'
+samples$Sample.Type[samples$Case.ID %in% samples_mixed_glioma$Case.ID] <- 'mixed_glioma'
+samples$Sample.Type[samples$Case.ID %in% samples_oligodendroglioma$Case.ID] <- 'oligodendroglioma'
+```
+
+```{r, eval=F, results='hide'}
+# Conjunto final de datos:
+head(samples)
+```
+
+```{r, eval=F, results='hide'}
+#Creamos las variables necesarias:
+Run <- samples$File.Name
+Path <- rep("brain_data_miRNAseq/all_data/data/counts",nrow(samples))
+Class <- samples$Sample.Type
+#Imprimimos el número de muestras por clase:
+table(Class) 
+```
+
+Una vez hemos formateado y reestructurado todos los datos, vemos que tenemos 529 muestras, de las cuales 196 son astrocitomas, 132 gliomas mixtos, y 201 oligodendrogliomas.
+
+```{r, eval=F, results='hide'}
+# Guardamos los datos en un csv para poder recuperarlos y no tener que realizar de nuevo todas las transformaciones anteriores:
+
+data.info <- data.frame(Run = Run, Path = Path, Class = Class)
+write.csv(file = "brain_data_miRNAseq/all_data/data_info_miRNA.csv", x = data.info)
+```
+
+Ya con los datos definitivos, vamos a realizar un preprocesamiento de los mismos para poder tratarlos con las funciones de la librería KnowSeq.
+
+En primer lugar aunamos los ficheros count:
+
+```{r, eval=F, results='hide'}
+countsInfo <- countsToMatrix("brain_data_miRNAseq/all_data/data_info_miRNA.csv", extension = "")
+#Guardar fichero de counts por agilizar futuras ejecuciones:
+save(countsInfo, file='brain_data_miRNAseq/all_data/countsInfo')
+```
+
+```{r}
+#Para cargar la matriz si es necesario:
+load(file = "brain_data_miRNAseq/all_data/countsInfo") 
+```
+
+Separamos los valores de expresión de cada gen y las etiquetas de cada muestra:
+
+```{r}
+countsMatrix <- countsInfo$countsMatrix
+labels <- countsInfo$labels
+```
+
+Realizamos el análisis de calidad y se seleccionan las muestras que pasen por el filtro (no outliers):
+
+```{r}
+#Análisis de calidad:
+QAResults <- RNAseqQA(countsMatrix, toRemoval = TRUE, toPNG=FALSE, toPDF=FALSE)
+```
+
+```{r}
+#Seleccionar muestras que pasen el filtro (no outliers)
+qualityMatrix <- QAResults$matrix
+qualityLabels <- labels[-which(colnames(countsMatrix) %in% QAResults$outliers)]
+```
+
+Normalizamos convenientemente los datos teniendo en cuenta que se tratan de miRNA-seq:
+
+```{r}
+# Normalizamos con el paquete edgeR
+library(edgeR)
+edgeMatrix <- DGEList(counts=qualityMatrix, group=qualityLabels)
+normMatrix <- calcNormFactors(edgeMatrix, method="TMM")
+normMatrix <- estimateCommonDisp(normMatrix)
+normMatrix <- estimateTagwiseDisp(normMatrix)
+normMatrix <- cpm(normMatrix, log=TRUE)
+```
+
+Creamos el modelo SVA de variables surrogadas para tratar el efecto batch:
+
+```{r}
+# Creamos el modelo SVA de variables surrogadas para tratar el efecto batch
+batchMatrix <- batchEffectRemoval(normMatrix, qualityLabels, method = "sva")
+dataPlot(batchMatrix, qualityLabels, mode = "orderedBoxplot")
+```
+
+Como podemos ver, tras el filtrado, la normalización y el tratamiento del efecto batch, los valores de expresión de cada gen se muestran en rangos similares, condición necesaria para poder tratar los datos correctamente.
+
+Guardamos la matriz con la expresión de los genes (MATRIZ) y el vector con las etiquetas de todas las muestras (LABELS):
+
+```{r}
+MATRIZ <- batchMatrix
+LABELS <- qualityLabels
+
+save(MATRIZ, file = 'MATRIZ')
+save(LABELS, file = 'LABELS')
+```
+
+```{r}
+# Cargamos los datos si es necesario:
+load(file = 'MATRIZ') #Filas son genes, columnas las muestras
+load(file = 'LABELS') #La clasificación en tipos de cáncer/normal para cada muestra
+```
+
+```{r}
+rownames(MATRIZ) <- make.names(rownames(MATRIZ)) #Para evitar problemas con los nombres de los genes.
+dim(MATRIZ) #Para ver el número total de muestras que vamos a tratar 
+table(LABELS) #Para ver la distribución de las muestras tras el preprocesamiento
+```
+
+Como podemos ver, tras el preprocesamiento, nuestros datos tienen 901 filas (genes con la expresión de cada uno) y 507 columnas (correspondientes a las muestras clínicas).
+
+## Extracción de genes diferencialmente expresados
+
+En primer lugar dividimos los datos en conjuntos de entrenamiento y test, en proporción 80%/20%. Esto lo hacemos para realizar las pruebas sin validación cruzada.
+
+```{r}
+set.seed(15) 
+
+nfolds <- 5 
+
+folds <- cvGenStratified(LABELS,nfolds)
+
+nData <- dim(MATRIZ)[1]
+indexTest <- which(folds == 1)# para ejecuciones no CV
+indexTrn <- which(folds != 1) # para ejecuciones no CV
+
+XTrn <- MATRIZ[,indexTrn]
+YTrn <- LABELS[indexTrn]
+XTest <- MATRIZ[,indexTest]
+YTest <- LABELS[indexTest]
+```
+
+Probamos con distintos valores de COV y LFC para determinar una extracción adecuada de genes diferencialmente expresados. Hacemos esto sobre el conjunto de train:
+
+```{r, eval=F, results='hide', message=FALSE, include=FALSE}
+
+lfc_values <- seq(from=0.0, to=1.0, by=0.1)
+cov_values <- c(1,2,3)
+numDEG <- matrix(0, nrow=length(lfc_values), ncol=length(cov_values)) 
+
+#En la matriz numDEG guardamos el número de genes diferencialmente expresados para cada combinación LFC-COV
+rownames(numDEG) <- as.character(lfc_values)
+colnames(numDEG) <- as.character(cov_values)
+
+for (cov_value in cov_values){
+  for (lfc_value in lfc_values){
+    tryCatch( #Para que no se detenga la ejecución si no se encuentran genes en algún paso
+      {DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = lfc_value, pvalue = 0.01, cov = cov_value)
+      #topTable <- DEGsInfo$DEG_Results$DEGs_Table
+      DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
+      numDEG[as.character(lfc_value), as.character(cov_value)] <- nrow(DEGsMatrix)
+      },
+      error=function(cond){ #Si encontramos que no hay genes que cumplan las restricciones impuestas
+        message(conditionMessage(cond))
+        NA
+      }
+    )
+  }
+}
+```
+
+Vemos el número de genes diferencialmente expresados para cada valor de COV (columnas) y LFC (filas):
+
+```{r}
+print(numDEG)
+```
+
+Tomaremos LFC=0.2, COV=1, que proporciona 67 genes diferencialmente expresados.
+
+Ahora extraemos la tabla de estadisticas de los genes diferencialmente expresados, asi como la matriz ya filtrada con dichos genes:
+
+```{r}
+DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = 0.2, pvalue = 0.01, cov = 1)
+DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
+topTable <- DEGsInfo$DEG_Results$DEGs_Table
+
+# Boxplot de expresion de 6 primeros DEGs
+dataPlot(DEGsMatrix[1:6,], YTrn, mode = "genesBoxplot", toPNG=FALSE, toPDF=FALSE)
+
+# Heatmap de expresion de 6 primeros DEGs
+dataPlot(DEGsMatrix[1:6,], YTrn, mode = "heatmap", toPNG=FALSE, toPDF=FALSE)
+```
+
+En el boxplot anterior se observa que las distribuciones de expresión para cada gen son similares entre las distintas clases, aunque no idénticas. Por ejemplo, se aprecia que los casos de oligodendroglioma suelen presentar valores de expresión ligeramente más extremos que para los otros dos tipos de cáncer.
+
+Como podemos ver en el heatmap, hay algunos genes que se muestran especialmente sobreexpresados (124.1), otros infraexpresados (1243), y otros no muestran una expresión diferencial muy fuerte (1224).
+
+## Identificación de biomarcadores
+
+En esta sección vamos a comparar distintos algoritmos de selección de características y diferentes clasificadores para ver qué combinación ofrece mejores resultados, y tomarla para los siguientes pasos del estudio.
+
+Concretamente, se usarán:
+
+-   Maximum Relevance Minimum Redundance (MRMR), Random Forest (RF) y Markov Blanket (MB) como algoritmos de selección (Disease Annotation no funciona con mmiRNA-seq)
+-   K Nearest Neighbours, Support Vector Machine (SVM), Random Forest (RF) y Logistic Regression (LR) como clasificadores.
+
+```{r}
+#Creamos las siguientes variables para manejar los valores de expresión y las etiquetas de cada muestra:
+MLMatrix <- t(DEGsMatrix)
+MLLabels <- YTrn
+```
+
+Generamos los rankings de características, primero para MRMR y RF con su implementación en KnowSeq:
+
+```{r, include=FALSE}
+FSRanking_MRMR <- featureSelection(MLMatrix, MLLabels, mode = "mrmr", vars_selected = colnames(MLMatrix))
+FSRanking_RF <- featureSelection(MLMatrix, MLLabels, mode = "rf", vars_selected = colnames(MLMatrix))
+```
+
+Markov Blanket no tiene implementación en KnowSeq, por lo que la añadimos a continuación:
+
+```{r, warning=FALSE}
+library(infotheo)  # Para calcular información mutua
+
+# Función para calcular la información mutua entre dos variables
+calculate_mutual_info <- function(X, Y) {
+  # Discretizar las variables y calcular la información mutua
+  return(mutinformation(discretize(X), discretize(Y)))
+}
+
+# Algoritmo hacia atrás Markov Blanket
+featureSelection_MB <- function(data, target) {
+   # Asegurarse de que 'data' sea una matriz y 'target' sea un vector
+  if (!is.matrix(data)) {
+    stop("La variable 'data' debe ser una matriz.")
+  }
+  if (!is.vector(target)) {
+    stop("La variable 'target' debe ser un vector.")
+  }
+  
+  # Inicializar el conjunto de características (columnas de la matriz)
+  XG <- colnames(data)  # Conjunto de todas las características
+  
+  # Asegurar que el vector 'target' tenga la misma longitud que las filas de 'data'
+  if (length(target) != nrow(data)) {
+    stop("El tamaño de 'target' no coincide con el número de filas de 'data'.")
+  }
+
+  # Lista para almacenar las pérdidas de las características
+  feature_loss <- numeric(length(XG))  # Para almacenar las pérdidas por eliminar cada característica
+  
+  # Iterar hasta que el conjunto de características sea pequeño
+  while (length(XG) > 0) {
+    # Inicializar el vector de pérdidas
+    loss_values <- numeric(length(XG))  
+    
+    # Calcular las pérdidas para cada característica
+    for (i in 1:length(XG)) {
+      Xj <- XG[i]
+      
+      # Obtener el marco de Markov Mj (las características más informativas respecto a Xj)
+      Mj <- setdiff(XG, Xj)  # Inicializamos Mj sin Xj (esto es un proxy de MB)
+      
+      # Verificar si hay suficientes columnas en Mj para realizar el cálculo de información mutua
+      if (length(Mj) == 0) {
+        next
+      }
+      
+      # Calcular la información mutua I({Mj ∪ Xj}, Y)
+      IMjXj_Y <- tryCatch({
+        calculate_mutual_info(data[, c(Mj, Xj)], target)
+      }, error = function(e) {
+        NA  # Si ocurre un error, devolver NA
+      })
+      
+      # Calcular la información mutua I(Mj, Y)
+      IMj_Y <- tryCatch({
+        calculate_mutual_info(data[, Mj], target)
+      }, error = function(e) {
+        NA  # Si ocurre un error, devolver NA
+      })
+      
+      # Si alguna de las informaciones mutuas no es válida (NA), no calcular la pérdida
+      if (is.na(IMjXj_Y) | is.na(IMj_Y)) {
+        loss_values[i] <- NA
+      } else {
+        # Calcular la pérdida para Xj
+        loss_values[i] <- IMjXj_Y - IMj_Y
+      }
+    }
+    
+    # Si todas las pérdidas son NA, detener el proceso
+    if (all(is.na(loss_values))) {
+      cat("Todas las pérdidas son NA. Deteniendo el algoritmo.\n")
+      break
+    }
+    
+    # Filtrar las pérdidas no-NA y seleccionar la característica con la menor pérdida
+    valid_loss_values <- loss_values[is.finite(loss_values)]
+    
+    # Si no hay valores válidos para calcular la pérdida, detener
+    if (length(valid_loss_values) == 0) {
+      cat("No hay valores válidos para calcular las pérdidas. Deteniendo el algoritmo.\n")
+      break
+    }
+    
+    # Seleccionar la característica con la menor pérdida
+    best_feature_to_remove <- XG[which.min(valid_loss_values)]
+    
+    # Almacenar la pérdida y la característica eliminada
+    feature_loss[which(XG == best_feature_to_remove)] <- loss_values[which(XG == best_feature_to_remove)]
+    
+    # Eliminar la característica seleccionada del conjunto
+    XG <- setdiff(XG, best_feature_to_remove)
+    
+    cat("Eliminada característica:", best_feature_to_remove, "\n")
+  }
+  
+  # Crear un data frame con el nombre de la característica y su pérdida
+  feature_ranking <- data.frame(
+    Feature = colnames(data),
+    Loss = feature_loss
+  )
+  
+  # Ordenar el ranking de características por la pérdida (menor a mayor)
+  feature_ranking <- feature_ranking[order(feature_ranking$Loss), ]
+  
+  # Devolver el ranking de las características ordenado
+  return(feature_ranking)
+}
+
+```
+
+Y calculamos el ranking de características con el algoritmo Markov Blanket:
+
+```{r, eval=F, results='hide', include=FALSE}
+FSRanking_MB <- featureSelection_MB(MLMatrix, MLLabels)$Feature
+```
+
+Obtenidos los tres rankings, vamos a probarlos ahora con cada uno de los cuatro algoritmos de clasificación. El modelado se hará sobre train, y se evaluará cada uno sobre train y test.
+
+La siguiente función nos permite representar gráficamente los resultados, mostrando la evolución de los valores de F-Score y accuracy para train y test, según se añaden más genes al modelo.
+
+```{r}
+nVarsMAX = 20 #Número máximo de genes a mostrar
+
+#Función para representar los resultados:
+plot_acc_f1 <- function(model_trn, model_test, nVarsMax = nVarsMax, title){
+  plot(1:nVarsMax, model_trn$F1Info$meanF1, "l", col="green", ylim=c(0.0,1.0), ylab='Métricas')
+  lines(1:nVarsMax, model_test$f1Vector,"l", lty=2, col="green")
+  grid()
+  lines(1:nVarsMax, model_trn$accuracyInfo$meanAccuracy, "l", col="black")
+  lines(1:nVarsMax, model_test$accVector,"l", lty=2, col="black")
+  title(main = title)
+  legend("bottomright",c("F-Score Train", "F-Score Test", "Accuracy Train", "Accuracy Test"), col=c("green","green","black","black"),lty=c(1,2,1,2), cex=1)
+  
+}
+```
+
+####  K Nearest Neighbours (KNN)
+
+Generamos con los datos de entrenamiento tres modelos distintos basados en KNN, cada uno con un selector de características distinto. Evaluamos cada clasificador sobre train y test, y mostramos los resultados gráficamente:
+
+```{r}
+#Para KNN-MRMR:
+knn_mrmr_trn <- knn_trn(MLMatrix, MLLabels, vars_selected = names(FSRanking_MRMR[1:nVarsMAX]))
+knn_mrmr_test <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=names(FSRanking_MRMR[1:nVarsMAX]), bestK=knn_mrmr_trn$bestK)
+plot_acc_f1(knn_mrmr_trn, knn_mrmr_test, nVarsMAX, "KNN-MRMR")
+
+#Para KNN-RF:
+knn_rf_trn <- knn_trn(MLMatrix, MLLabels, vars_selected = FSRanking_RF[1:nVarsMAX])
+knn_rf_test <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_RF[1:nVarsMAX], bestK=knn_rf_trn$bestK)
+plot_acc_f1(knn_rf_trn, knn_rf_test, nVarsMAX, "KNN-RF")
+
+#Para KNN-MB:
+knn_mb_trn <- knn_trn(MLMatrix, MLLabels, vars_selected = FSRanking_MB[1:nVarsMAX])
+knn_mb_test <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_MB[1:nVarsMAX], bestK=knn_mb_trn$bestK)
+plot_acc_f1(knn_mb_trn, knn_mb_test, nVarsMAX, "KNN-MB")
+```
+
+```{r}
+dataPlot(knn_mrmr_test$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(knn_rf_test$cfMats[[6]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(knn_mb_test$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+Para este clasificador los resultados son razonables para el caso de la métrica Accuracy, pero observando el F-Score vemos que hay cobinaciones de genes (con 8, concretamente) que dan lugar a una gran confusión en la clasificación. En cualquier caso, para los tres selectores de características, tienen que tomarse bastantes genes (de 15 en adelante) para obtener unos resultados estables y razonablemente buenos. Como punto positivo, se ha de decir que la construcción de los modelos es realmente rápida (ya que knn sólo tiene que guardar los puntos).
+
+#### Support Vector Machine (SVM)
+
+En este apartado se abordará el entrenamiento de los modelos train y test del clasificador SVM (Support Vector Machine) para la clasificación de los tres tipos de cáncer cerebral. A lo largo de esta sección se utilizarán las funciones `svm_trn` y `svm_test2`. Esta última función es la misma que la función del KnowSeq `svm_test` pero con los arreglos que se indican para su buen funcionamiento en este problema:
+
+```{r}
+svm_test2 <-function(train,labelsTrain,test,labelsTest,vars_selected,bestParameters){
+
+  if(!is.data.frame(train) && !is.matrix(train)){
+    
+    stop("The train argument must be a dataframe or a matrix.")
+    
+  }
+  
+  if(dim(train)[1] != length(labelsTrain)){
+    
+    stop("The length of the rows of the argument train must be the same than the length of the lablesTrain. Please, ensures that the rows are the samples and the columns are the variables.")
+    
+  }
+  
+  if(!is.character(labelsTrain)  && !is.factor(labelsTrain)){stop("The class of the labelsTrain parameter must be character vector or factor.")}
+  if(is.character(labelsTrain)){ labelsTrain <- as.factor(labelsTrain) }
+  
+  if(!is.character(labelsTest)  && !is.factor(labelsTest)){stop("The class of the labelsTest parameter must be character vector or factor.")}
+  if(is.character(labelsTest)){ labelsTest <- as.factor(labelsTest) }
+  
+  if(!is.data.frame(test) && !is.matrix(test)){
+    
+    stop("The test argument must be a dataframe or a matrix.")
+    
+  }
+  
+  if(dim(test)[1] != length(labelsTest)){
+    
+    stop("The length of the rows of the argument test must be the same than the length of the lablesTest. Please, ensures that the rows are the samples and the columns are the variables.")
+    
+  }
+  
+  train <- as.data.frame(apply(train,2,as.double))
+  train <- train[,vars_selected]
+  test <- as.data.frame(apply(test,2,as.double))
+  test <- test[,vars_selected]
+  
+  train = vapply(train, function(x){ 
+    max <- max(x)
+    min <- min(x)
+    if(max >  min){
+      x <- ((x - min) / (max - min)) * 2 - 1
+    }
+    else{
+      x
+    }}, double(nrow(train)))
+  
+  train <- as.data.frame(train)
+  
+  test = vapply(test, function(x){ 
+    max <- max(x)
+    min <- min(x)
+    if(max >  min){
+      x <- ((x - min) / (max - min)) * 2 - 1
+    }
+    else{
+      x
+    }}, double(nrow(test)))
+  
+  test <- as.data.frame(test)
+
+  accVector <- double()
+  sensVector <- double()
+  specVector <- double()
+  f1Vector <- double()
+  cfMatList  <- list()
+  colNames <- colnames(train)
+  for(i in seq_len(dim(test)[2])){
+    cat(paste("Testing with ", i," variables...\n",sep=""))
+    columns <- make.names(c(colNames[seq(i)])) # make.names()convierte los nombres en identificadores sintácticamente válidos
+    tr_ctr <- trainControl(method="none")
+    colnames(train)<-make.names(colnames(train)) # se alteran los nombres para que coincidan con los de las columnas
+    dataForTrt <- data.frame(cbind(subset(train, select=columns),labelsTrain))
+    colnames(train)[seq(i)] <- make.names(columns)
+    svm_model <- train(labelsTrain ~ ., data = dataForTrt, type = "C-svc", 
+                       method = "svmRadial", preProc = c("center", "scale"),
+                       trControl = tr_ctr, 
+                       tuneGrid=data.frame(sigma=getElement(bestParameters, "gamma"), 
+                                           C = getElement(bestParameters, "C")))
+    colnames(test)<-make.names(colnames(test)) # alteramos los nombres en el conjunto test para poder extraer del dataframe test los genes con el mismo nombre que en la variable columns
+    testX = subset(test, select=columns)
+    unkX <- testX
+    colnames(unkX) <- make.names(colnames(testX))
+    colnames(testX) <- make.names(colnames(testX))
+    predicts <- extractPrediction(list(my_svm=svm_model), testX = testX, unkX = unkX,
+                                  unkOnly = !is.null(unkX) & !is.null(testX))
+    
+    predicts <- predicts$pred
+    
+    cfMat<-confusionMatrix(predicts,labelsTest)
+    
+    if (length(levels(labelsTrain))==2){
+      sens <- cfMat$byClass[[1]]
+      spec <- cfMat$byClass[[2]]
+      f1 <- cfMat$byClass[[7]]
+    } else{
+      sens <- mean(cfMat$byClass[,1])
+      spec <- mean(cfMat$byClass[,2])
+      cfMat$byClass[,7][is.na(cfMat$byClass[,7])] <- 0 
+      # CAMBIO:
+      # Es mejor reemplazar los valores NA en esta etapa para permitir que el F1-score se grafique correctamente. 
+      # Si el reemplazo se realiza después, el promedio de los tres F1-scores inicialmente resultará en NA y luego        en cero, lo que excluye el F1 de las demás clases. 
+      # Reemplazar el NA aquí garantiza que el cálculo de la media considere un F1 de 0 en caso de que la precisión       sea NA y el recall sea 0. Esto sucede cuando una clase no es predicha ni correctamente ni incorrectamente, 
+      # es decir, cuando el número de falsos positivos y falsos negativos es 0.
+      f1 <- mean(cfMat$byClass[,7])
+    }
+    
+    cfMatList[[i]] <- cfMat
+    accVector[i] <- cfMat$overall[[1]]
+    sensVector[i] <- sens
+    specVector[i] <- spec
+    f1Vector[i] <- f1
+    
+    #if(is.na(f1Vector[i])) f1Vector[i] <- 0 
+  }
+
+  cat("Classification done successfully!\n")
+  names(accVector) <- vars_selected
+  names(sensVector) <- vars_selected
+  names(specVector) <- vars_selected
+  names(f1Vector) <- vars_selected
+
+  results <- list(cfMatList,accVector,sensVector,specVector,f1Vector)
+  names(results) <- c("cfMats","accVector","sensVector","specVector","f1Vector")
+  invisible(results)
+
+}
+```
+
+Realizamos el mismo cambio relativo al cálculo del valor F1 para el código fuente de la función `svm_train`:
+
+```{r}
+svm_trn <- function(data, labels, vars_selected, numFold = 10) {
+  if (!is.data.frame(data) && !is.matrix(data)) {
+    stop("The data argument must be a dataframe or a matrix.")
+  }
+  if (dim(data)[1] != length(labels)) {
+    stop("The length of the rows of the argument data must be the same than the length of the lables. Please, ensures that the rows are the samples and the columns are the variables.")
+  }
+  
+  if (!is.character(labels) && !is.factor(labels)) {
+    stop("The class of the labels parameter must be character vector or factor.")
+  }
+  if (is.character(labels)) {
+    labels <- as.factor(labels)
+  }
+  
+  if (numFold %% 1 != 0 || numFold == 0) {
+    stop("The numFold argument must be integer and greater than 0.")
+  }
+  
+  data <- as.data.frame(apply(data, 2, as.double))
+  data <- data[, vars_selected]
+  
+  data <- vapply(data, function(x) {
+    max <- max(x)
+    min <- min(x)
+    if(max >  min){
+      x <- ((x - min) / (max - min)) * 2 - 1
+    }
+    else{
+      x
+    }
+  }, double(nrow(data)))
+  
+  data <- as.data.frame(data)
+  
+  fitControl <- trainControl(method = "cv", number = 10)
+  cat("Tuning the optimal C and G...\n")
+  
+  grid_radial <- expand.grid(
+    sigma = c(
+      0, 0.01, 0.02, 0.025, 0.03, 0.04,
+      0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.25, 0.5, 0.75, 0.9
+    ),
+    C = c(
+      0.01, 0.05, 0.1, 0.25, 0.5, 0.75,
+      1, 1.5, 2, 5
+    )
+  )
+  
+  dataForTunning <- cbind(data, labels)
+  colnames(dataForTunning) <- make.names(colnames(dataForTunning))
+  Rsvm_sb <- train(labels ~ ., data = dataForTunning, type = "C-svc", method = "svmRadial", preProc = c("center", "scale"), trControl = fitControl, tuneGrid = grid_radial)
+  
+  bestParameters <- c(C = Rsvm_sb$bestTune$C, gamma = Rsvm_sb$bestTune$sigma)
+  cat(paste("Optimal cost:", bestParameters[1], "\n"))
+  cat(paste("Optimal gamma:", bestParameters[2], "\n"))
+  
+  acc_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  sens_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  spec_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  f1_cv <- matrix(0L, nrow = numFold, ncol = dim(data)[2])
+  cfMatList <- list()
+  # compute size of val fold
+  lengthValFold <- dim(data)[1]/numFold
+  
+  # reorder the data matrix in order to have more
+  # balanced folds
+  positions <- rep(seq_len(dim(data)[1]))
+  randomPositions <- sample(positions)
+  data <- data[randomPositions,]
+  labels <- labels[randomPositions]
+
+  for (i in seq_len(numFold)) {
+    cat(paste("Training fold ", i, "...\n", sep = ""))
+    
+    # obtain validation and training folds
+    valFold <- seq(round((i-1)*lengthValFold + 1 ), round(i*lengthValFold))
+    trainDataCV <- setdiff(seq_len(dim(data)[1]), valFold)
+    testDataset<- data[valFold,]
+    trainingDataset <- data[trainDataCV,]
+    labelsTrain <- labels[trainDataCV]
+    labelsTest <- labels[valFold]
+    colNames <- colnames(trainingDataset)
+    
+    for (j in seq_len(length(vars_selected))) {
+      columns <- c(colNames[seq(j)])
+      tr_ctr <- trainControl(method="none")
+      dataForTrt <- data.frame(cbind(subset(trainingDataset, select=columns),labelsTrain))
+      colnames(dataForTrt)[seq(j)] <- make.names(columns)
+      svm_model <- train(labelsTrain ~ ., data = dataForTrt, type = "C-svc", 
+                         method = "svmRadial", preProc = c("center", "scale"),
+                         trControl = tr_ctr, 
+                         tuneGrid=data.frame(sigma = bestParameters[2], C = bestParameters[1]))
+      
+      testX = subset(testDataset, select=columns)
+      unkX <- testX
+      colnames(unkX) <- make.names(colnames(testX))
+      colnames(testX) <- make.names(colnames(testX))
+      predicts <- extractPrediction(list(my_svm=svm_model), testX = testX, unkX = unkX,
+                                    unkOnly = !is.null(unkX) & !is.null(testX))
+      
+      predicts <- predicts$pred
+      
+      cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
+      acc_cv[i, j] <- cfMatList[[i]]$overall[[1]]
+      
+      if (length(levels(labelsTrain))==2){
+        sens <- cfMatList[[i]]$byClass[[1]]
+        spec <- cfMatList[[i]]$byClass[[2]]
+        f1 <- cfMatList[[i]]$byClass[[7]]
+      } else{
+        sens <- mean(cfMatList[[i]]$byClass[,1])
+        spec <- mean(cfMatList[[i]]$byClass[,2])
+        cfMatList[[i]]$byClass[,7][is.na(cfMatList[[i]]$byClass[,7])] <- 0 # CAMBIO
+        f1 <- mean(cfMatList[[i]]$byClass[,7])
+      }
+      
+      sens_cv[i, j] <- sens
+      spec_cv[i, j] <- spec
+      f1_cv[i, j] <- f1
+      
+      if(is.na(sens_cv[i,j])) sens_cv[i,j] <- 0
+      if(is.na(spec_cv[i,j])) spec_cv[i,j] <- 0
+      if(is.na(f1_cv[i,j])) f1_cv[i,j] <- 0
+    }
+  }
+  
+  meanAcc <- colMeans(acc_cv)
+  names(meanAcc) <- colnames(acc_cv)
+  sdAcc <- apply(acc_cv, 2, sd)
+  accuracyInfo <- list(meanAcc, sdAcc)
+  names(accuracyInfo) <- c("meanAccuracy","standardDeviation")
+  
+  
+  meanSens <- colMeans(sens_cv)
+  names(meanSens) <- colnames(sens_cv)
+  sdSens <- apply(sens_cv, 2, sd)
+  sensitivityInfo <- list(meanSens, sdSens)
+  names(sensitivityInfo) <- c("meanSensitivity","standardDeviation")
+  
+  
+  meanSpec <- colMeans(spec_cv)
+  names(meanSpec) <- colnames(spec_cv)
+  sdSpec <- apply(spec_cv, 2, sd)
+  specificityInfo <- list(meanSpec, sdSpec)
+  names(specificityInfo) <- c("meanSpecificity","standardDeviation")
+  
+  
+  meanF1 <- colMeans(f1_cv)
+  names(meanF1) <- colnames(f1_cv)
+  sdF1 <- apply(f1_cv, 2, sd)
+  F1Info <- list(meanF1, sdF1)
+  names(F1Info) <- c("meanF1","standardDeviation")
+  
+  cat("Classification done successfully!\n")
+  results_cv <- list(cfMatList,accuracyInfo,sensitivityInfo,specificityInfo,F1Info,bestParameters)
+  names(results_cv) <- c("cfMats","accuracyInfo","sensitivityInfo","specificityInfo","F1Info","bestParameters")
+  invisible(results_cv)
+  
+}
+```
+
+```{r}
+#Para SVM-MRMR:
+svm_mrmr_trn <- svm_trn(MLMatrix, MLLabels, vars_selected = names(FSRanking_MRMR[1:nVarsMAX]))
+svm_mrmr_test <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=names(FSRanking_MRMR[1:nVarsMAX]), bestParameters = svm_mrmr_trn$bestParameters)
+plot_acc_f1(svm_mrmr_trn, svm_mrmr_test, nVarsMAX, "SVM-MRMR")
+
+#Para SVM-RF:
+svm_rf_trn <- svm_trn(MLMatrix, MLLabels, vars_selected = FSRanking_RF[1:nVarsMAX])
+svm_rf_test <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_RF[1:nVarsMAX], bestParameters = svm_rf_trn$bestParameters)
+plot_acc_f1(svm_rf_trn, svm_rf_test, nVarsMAX, "SVM-RF")
+
+#Para SVM-MB:
+svm_mb_trn <- svm_trn(MLMatrix, MLLabels, vars_selected = FSRanking_MB[1:nVarsMAX])
+svm_mb_test <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_MB[1:nVarsMAX], bestParameters = svm_mb_trn$bestParameters)
+plot_acc_f1(svm_mb_trn, svm_mb_test, nVarsMAX, "SVM-MB")
+```
+
+Y mostramos las matrices de confusión para el número de genes que se considera óptimo en cada caso:
+
+```{r}
+dataPlot(svm_mrmr_test$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(svm_rf_test$cfMats[[8]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(svm_mb_test$cfMats[[8]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+#### Random Forest (RF):
+
+Generamos con los datos de entrenamiento tres modelos distintos basados en Random Forest, cada uno con un selector de características distinto. Evaluamos cada clasificador sobre train y test, y mostramos los resultados gráficamente:
+
+```{r}
+nVarsMAX = 10
+#Para RF-MRMR:
+rf_mrmr_trn <- rf_trn(MLMatrix, MLLabels, vars_selected = names(FSRanking_MRMR[1:nVarsMAX]), numFold = 5)
+rf_mrmr_test <- rf_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=names(FSRanking_MRMR[1:nVarsMAX]), bestParameters = rf_mrmr_trn$bestParameters)
+plot_acc_f1(rf_mrmr_trn, rf_mrmr_test, nVarsMAX, "RF-MRMR")
+
+#Para RF-RF:
+rf_rf_trn <- rf_trn(MLMatrix, MLLabels, vars_selected = FSRanking_RF[1:nVarsMAX], numFold = 5)
+rf_rf_test <- rf_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_RF[1:nVarsMAX], bestParameters = rf_rf_trn$bestParameters)
+plot_acc_f1(rf_rf_trn, rf_rf_test, nVarsMAX, "RF-RF")
+
+#Para RF-MB:
+rf_mb_trn <- rf_trn(MLMatrix, MLLabels, vars_selected = FSRanking_MB[1:nVarsMAX], numFold = 5)
+rf_mb_test <- rf_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=FSRanking_MB[1:nVarsMAX], bestParameters = rf_mb_trn$bestParameters)
+plot_acc_f1(rf_mb_trn, rf_mb_test, nVarsMAX, "RF-MB")
+```
+
+Y mostramos las matrices de confusión para el número de genes que se considera óptimo en cada caso:
+
+```{r}
+dataPlot(rf_mrmr_test$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(rf_rf_test$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(rf_mb_test$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+#### Regresión Logística (Logistic Regression, LR)
+
+Para trabajar con el algoritmo de Regresión Logística, en primer lugar incluimos la implementación del clasificador, tanto para train como para test. Esto se ha hecho a imagen y semejanza de las implementaciones ya existentes en la librería knowSeq:
+
+```{r}
+#Implementación de logistic regression para train (crear el modelo a partir de train)
+logistic_trn2 <- function(data=MLMatrix, labels=MLLabels, vars_selected=names(FSRanking_MRMR[1:nVarsMAX]), numFold = 10, LOOCV = FALSE){
+  
+  if (!is.data.frame(data) && !is.matrix(data)) {
+    stop("The data argument must be a dataframe or a matrix.")
+  }
+  if (dim(data)[1] != length(labels)) {
+    stop("The length of the rows of the argument data must be the same as the length of the labels. Please ensure that the rows are the samples and the columns are the variables.")
+  }
+  
+  if (!is.character(labels) && !is.factor(labels)) {
+    stop("The class of the labels parameter must be a character vector or factor.")
+  }
+  
+  if (is.character(labels)) {
+    labels <- as.factor(labels)
+  }
+  
+  if (numFold %% 1 != 0 || numFold == 0) {
+    stop("The numFold argument must be an integer and greater than 0.")
+  }
+  
+  data <- as.data.frame(apply(data, 2, as.double))
+  data <- data[, vars_selected]
+  
+  # Scaling the data between -1 and 1
+  data = vapply(data, function(x) { 
+    max_val <- max(x)
+    min_val <- min(x)
+    if (max_val > min_val) {
+      x <- ((x - min_val) / (max_val - min_val)) * 2 - 1
+    }
+    return(x)
+  }, double(nrow(data)))
+  
+  data <- as.data.frame(data)
+  
+  fitControl <- trainControl(method = "repeatedcv", number = numFold, repeats = 3)
+  cat("Tuning the optimal model...\n")
+  
+  # Use logistic regression with multinomial family for 3 classes
+  logistic_model <- train(data, labels, method = "multinom", trControl = fitControl, preProcess = c("center", "scale"))
+  
+  cat(paste("Optimal model tuned.\n"))
+  
+  if (LOOCV == FALSE) { 
+    accuracyInfo <- list()
+    sensitivityInfo <- list()
+    specificityInfo <- list()
+    f1Info <- list()
+    
+    acc_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
+    sens_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
+    spec_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
+    f1_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
+    
+    cfMatList <- list()
+    lengthValFold <- dim(data)[1] / numFold
+    
+    positions <- rep(seq_len(dim(data)[1]))
+    randomPositions <- sample(positions)
+    data <- data[randomPositions, ]
+    labels <- labels[randomPositions]
+    
+    for (i in seq_len(numFold)) {
+      cat("Running K-Fold Cross-Validation...\n")
+      cat(paste("Training fold ", i, "...\n", sep = ""))
+      
+      valFold <- seq(round((i - 1) * lengthValFold + 1), round(i * lengthValFold))
+      trainDataCV <- setdiff(seq_len(dim(data)[1]), valFold)
+      testDataset <- data[valFold, ]
+      trainingDataset <- data[trainDataCV, ]
+      labelsTrain <- labels[trainDataCV]
+      labelsTest <- labels[valFold]
+      
+      # Train logistic regression model for 3 classes
+      logistic_mod <- multinom(labelsTrain ~ ., data = trainingDataset)
+      predicts <- predict(logistic_mod, testDataset)
+      
+      cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
+      acc_cv[i, 1] <- cfMatList[[i]]$overall[[1]]
+      
+      # Compute sensitivity, specificity, and F1 score
+      if (length(levels(labelsTrain))==2){
+          sens <- cfMatList[[i]]$byClass[[1]]
+          spec <- cfMatList[[i]]$byClass[[2]]
+          f1 <- cfMatList[[i]]$byClass[[7]]
+        } else{
+          sens <- mean(cfMatList[[i]]$byClass[,1])
+          spec <- mean(cfMatList[[i]]$byClass[,2])
+          f1 <- mean(cfMatList[[i]]$byClass[,7])
+        }
+      sens_cv[i, 1] <- sens
+      spec_cv[i, 1] <- spec
+      f1_cv[i, 1] <- f1
+      
+      if (is.na(sens_cv[i, 1])) sens_cv[i, 1] <- 0
+      if (is.na(spec_cv[i, 1])) spec_cv[i, 1] <- 0
+      #if (is.na(f1_cv[i, 1])) f1_cv[i, 1] <- 0
+      
+      for (j in 2:length(vars_selected)) {
+        logistic_mod <- multinom(labelsTrain ~ ., data = trainingDataset[, 1:j])
+        predicts <- predict(logistic_mod, testDataset[, 1:j])
+        
+        cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
+        acc_cv[i, j] <- cfMatList[[i]]$overall[[1]]
+        
+        cfMatList[[i]]$byClass[, 1][is.na(cfMatList[[i]]$byClass[, 1])] <- 0
+        sens <- mean(cfMatList[[i]]$byClass[, 1])
+        cfMatList[[i]]$byClass[, 2][is.na(cfMatList[[i]]$byClass[, 2])] <- 0
+        spec <- mean(cfMatList[[i]]$byClass[, 2])
+        cfMatList[[i]]$byClass[, 7][is.na(cfMatList[[i]]$byClass[, 7])] <- 0
+        f1 <- mean(cfMatList[[i]]$byClass[, 7])
+        
+        sens_cv[i, j] <- sens
+        spec_cv[i, j] <- spec
+        f1_cv[i, j] <- f1
+        
+        if (is.na(sens_cv[i, j])) sens_cv[i, j] <- 0
+        if (is.na(spec_cv[i, j])) spec_cv[i, j] <- 0
+        #if (is.na(f1_cv[i, j])) f1_cv[i, j] <- 0
+      }
+    }
+    
+    # Calculate mean and standard deviation
+    meanAcc <- colMeans(acc_cv)
+    sdAcc <- apply(acc_cv, 2, sd)
+    accuracyInfo <- list(meanAcc, sdAcc)
+    names(accuracyInfo) <- c("meanAccuracy", "standardDeviation")
+    
+    meanSens <- colMeans(sens_cv)
+    sdSens <- apply(sens_cv, 2, sd)
+    sensitivityInfo <- list(meanSens, sdSens)
+    names(sensitivityInfo) <- c("meanSensitivity", "standardDeviation")
+    
+    meanSpec <- colMeans(spec_cv)
+    sdSpec <- apply(spec_cv, 2, sd)
+    specificityInfo <- list(meanSpec, sdSpec)
+    names(specificityInfo) <- c("meanSpecificity", "standardDeviation")
+    
+    meanF1 <- colMeans(f1_cv)
+    sdF1 <- apply(f1_cv, 2, sd)
+    F1Info <- list(meanF1, sdF1)
+    names(F1Info) <- c("meanF1", "standardDeviation")
+    
+    cat("Classification done successfully!\n")
+    results_cv <- list(cfMatList, accuracyInfo, sensitivityInfo, specificityInfo, F1Info, logistic_model)
+    names(results_cv) <- c("cfMats", "accuracyInfo", "sensitivityInfo", "specificityInfo", "F1Info", "logisticModel")
+    invisible(results_cv)
+  
+  } else {
+    # LOOCV section (Leave-One-Out Cross-Validation)
+    cat("Running Leave-One-Out Cross-Validation...\n")
+    accuracyInfo <- numeric()
+    sensitivityInfo <- numeric()
+    specificityInfo <- numeric()
+    F1Info <- numeric()
+    predictions <- list()
+    cfMatList <- list()
+    
+    for (i in 1:dim(data)[1]) {
+      # Perform LOOCV
+      trainDataCV <- setdiff(1:dim(data)[1], i)
+      testData <- data[i, , drop = FALSE]
+      trainLabels <- labels[trainDataCV]
+      testLabel <- labels[i]
+      
+      logistic_mod <- multinom(labelsTrain ~ ., data = data[trainDataCV, , drop = FALSE])
+      predictLabel <- predict(logistic_mod, testData)
+      
+      cfMatList[[i]] <- confusionMatrix(predictLabel, testLabel)
+      accuracyInfo[i] <- cfMatList[[i]]$overall[[1]]
+      sensitivityInfo[i] <- cfMatList[[i]]$byClass[[1]]
+      specificityInfo[i] <- cfMatList[[i]]$byClass[[2]]
+      F1Info[i] <- cfMatList[[i]]$byClass[[7]]
+    }
+    
+    results_loocv <- list(cfMatList, accuracyInfo, sensitivityInfo, specificityInfo, F1Info)
+    names(results_loocv) <- c("cfMats", "accuracyInfo", "sensitivityInfo", "specificityInfo", "F1Info")
+    invisible(results_loocv)
+  }
+}
+```
+
+```{r}
+#Implementación de Logistic Regression para test (multiclass):
+
+library(nnet)
+logistic_test_multiclase <- function(tren, etiquetasTren, prueba, etiquetasPrueba, vars_selected, logistic_trn_mrmr) {
+  
+  # Validar tipos de datos de los argumentos
+  if (!is.data.frame(tren) && !is.matrix(tren)) {
+    stop("El argumento tren debe ser un marco de datos o una matriz.")
+  }
+  
+  if (dim(tren)[1] != length(etiquetasTren)) {
+    stop("La longitud de las filas del argumento tren debe ser la misma que la longitud de etiquetasTren.")
+  }
+  
+  if (!is.character(etiquetasTren) && !is.factor(etiquetasTren)) {
+    stop("La clase del parámetro etiquetasTren debe ser un vector de caracteres o un factor.")
+  }
+  if (is.character(etiquetasTren)) { etiquetasTren <- as.factor(etiquetasTren) }
+  
+  if (!is.character(etiquetasPrueba) && !is.factor(etiquetasPrueba)) {
+    stop("La clase del parámetro etiquetasPrueba debe ser un vector de caracteres o un factor.")
+  }
+  if (is.character(etiquetasPrueba)) { etiquetasPrueba <- as.factor(etiquetasPrueba) }
+  
+  if (!is.data.frame(prueba) && !is.matrix(prueba)) {
+    stop("El argumento prueba debe ser un marco de datos o una matriz.")
+  }
+  
+  if (dim(prueba)[1] != length(etiquetasPrueba)) {
+    stop("La longitud de las filas del argumento prueba debe ser la misma que la longitud de etiquetasPrueba.")
+  }
+  
+  # Seleccionar las variables necesarias de los datos
+  tren <- as.data.frame(apply(tren, 2, as.double))
+  tren <- tren[, vars_selected, drop = FALSE]
+  
+  prueba <- as.data.frame(apply(prueba, 2, as.double))
+  prueba <- prueba[, vars_selected, drop = FALSE]
+  
+  # Normalizar las características entre -1 y 1
+  tren <- vapply(tren, function(x) {
+    max_val <- max(x)
+    min_val <- min(x)
+    if (max_val > min_val) {
+      x <- ((x - min_val) / (max_val - min_val)) * 2 - 1
+    }
+    return(x)
+  }, double(nrow(tren)))
+  tren <- as.data.frame(tren)
+  
+  prueba <- vapply(prueba, function(x) {
+    max_val <- max(x)
+    min_val <- min(x)
+    if (max_val > min_val) {
+      x <- ((x - min_val) / (max_val - min_val)) * 2 - 1
+    }
+    return(x)
+  }, double(nrow(prueba)))
+  prueba <- as.data.frame(prueba)
+  
+  # Inicializar vectores para almacenar los resultados
+  accVector <- double()
+  sensVector <- double()
+  specVector <- double()
+  f1Vector <- double()
+  cfMatList <- list()
+  predicVector <- list()
+  
+  # Usar el modelo entrenado logistic_trn_mrmr$logisticModel$finalModel
+  best_decay <- logistic_trn_mrmr$logisticModel$finalModel$decay
+  
+  # Realizar predicciones en los datos de prueba usando el modelo entrenado
+  logistic_model <- multinom(etiquetasTren~., data=subset(tren, select = c(colnames(tren)[1])), decay = best_decay)
+  predicciones <- predict(logistic_model, subset(prueba, select = c(colnames(prueba)[1])), type = "class")
+  predictScores <- predict(logistic_model,subset(prueba, select = c(colnames(prueba)[1])), type = "prob")
+  
+  # Calcular la matriz de confusión y las métricas
+  cfMat <- confusionMatrix(predicciones, etiquetasPrueba)
+  sens <- mean(cfMat$byClass[, "Sensitivity"])
+  spec <- mean(cfMat$byClass[, "Specificity"])
+  cfMat$byClass[, "F1"][is.na(cfMat$byClass[, "F1"])] <- 0
+  f1 <- mean(cfMat$byClass[, "F1"])
+  
+  # Guardar los resultados para este conjunto de características
+  cfMatList[[1]] <- cfMat
+  accVector[1] <- cfMat$overall["Accuracy"]
+  sensVector[1] <- sens
+  specVector[1] <- spec
+  f1Vector[1] <- f1
+  predicVector[[1]] <- predictScores
+  
+  # Si hay más variables, repetimos el proceso con más características
+  if (dim(prueba)[2] > 1) {
+    for (i in 2:dim(prueba)[2]) {
+      cat(paste("Probando con", i, "variables...\n", sep = " "))
+      
+      logistic_model2 <- multinom(etiquetasTren~., data=tren[,1:i], decay = best_decay)
+      predicciones <- predict(logistic_model2, prueba[, 1:i], type = "class")
+      predictScores <- predict(logistic_model2, prueba[, 1:i], type = "prob")
+      
+      cfMat <- confusionMatrix(predicciones, etiquetasPrueba)
+      sens <- mean(cfMat$byClass[, "Sensitivity"])
+      spec <- mean(cfMat$byClass[, "Specificity"])
+      cfMat$byClass[, "F1"][is.na(cfMat$byClass[, "F1"])] <- 0
+      f1 <- mean(cfMat$byClass[, "F1"])
+      
+      cfMatList[[i]] <- cfMat
+      accVector[i] <- cfMat$overall["Accuracy"]
+      sensVector[i] <- sens
+      specVector[i] <- spec
+      f1Vector[i] <- f1
+      predicVector[[i]] <- predictScores
+    }
+  }
+  
+  cat("¡Clasificación realizada con éxito!\n")
+  
+  # Asignar nombres a los resultados
+  names(accVector) <- vars_selected
+  names(sensVector) <- vars_selected
+  names(specVector) <- vars_selected
+  names(f1Vector) <- vars_selected
+  
+  # Devolver los resultados como una lista
+  resultados <- list(cfMatList, accVector, sensVector, specVector, f1Vector, predicVector)
+  names(resultados) <- c("cfMats", "accVector", "sensVector", "specVector", "f1Vector", "predicciones")
+  
+  invisible(resultados)
+}
+```
+
+Y ahora generamos, con los datos de entrenamiento, tres modelos distintos basados en KNN, cada uno con un selector de características distinto. Evaluamos cada clasificador sobre train y test, y mostramos los resultados gráficamente:
+
+```{r}
+nVarsMAX=20
+#Para LR-MRMR
+lr_mrmr_trn <- logistic_trn2(MLMatrix, MLLabels, vars_selected = names(FSRanking_MRMR[1:nVarsMAX]))
+lr_mrmr_test <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, names(FSRanking_MRMR[1:nVarsMAX]), lr_mrmr_trn)
+plot_acc_f1(lr_mrmr_trn, lr_mrmr_test, nVarsMAX, "LR-MRMR")
+
+#Para LR-RF:
+lr_rf_trn <- logistic_trn2(MLMatrix, MLLabels, vars_selected = FSRanking_RF[1:nVarsMAX])
+lr_rf_test <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, FSRanking_RF[1:nVarsMAX], lr_rf_trn)
+plot_acc_f1(lr_rf_trn, lr_rf_test, nVarsMAX, "LR-RF")
+
+#Para LR-MB:
+lr_mb_trn <- logistic_trn2(MLMatrix, MLLabels, vars_selected = FSRanking_RF[1:nVarsMAX])
+lr_mb_test <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, FSRanking_RF[1:nVarsMAX], lr_mb_trn)
+plot_acc_f1(lr_mb_trn, lr_mb_test, nVarsMAX, "LR-MB")
+
+```
+
+Y mostramos las matrices de confusión para el número de genes que se considera óptimo en cada caso:
+
+```{r}
+dataPlot(lr_mrmr_test$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(lr_rf_test$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+dataPlot(lr_mb_test$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+```
+
+## Algoritmo y selector definitivos
+
+A la vista de los resultados anteriores, consideramos que el clasificador basado en la Regresión Logística y el algoritmo selector de características Random Forest es la mejor combinación.
+
+Veamos ahora los resultados de esta combinación sobre test, incluyendo el heatmap y la matriz de confusión correspondientes:
+
+```{r}
+nVarsMAX=20
+
+model_trn <- logistic_trn2(MLMatrix, MLLabels, vars_selected = FSRanking_RF[1:nVarsMAX])
+model_test <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = FSRanking_RF[1:nVarsMAX], model_trn)
+
+#Heatmap
+dataPlot(model_trn,MLLabels,mode = "heatmapResults")
+
+#Resultados sobre test:
+plot_acc_f1(model_trn, model_test, nVarsMAX, "LR-RF")
+```
+
+```{r}
+#Matriz de confusión con los resultados sobre test para 4 genes
+dataPlot(model_test$cfMats[[4]]$table,mode = "confusionMatrix")
+```
+
+## Resultados sobre 5CV y selección de la huella
+
+Determinados ya el selector y el clasificador que vamos a usar, vamos a concretar ahora qué huella génica tomar para nuestro modelo. Lo haremos realizando una validación cruzada en 5 partes sobre el conjunto total de datos, de forma que en cada iteración se recogerá el ranking de genes aplicado, y junto con los resultados finales (media de las 5 iteraciones) podremos concluir cuántos y qué genes van a formar nuestra huella:
+
+```{r, include=FALSE, message=FALSE}
+nVarsMAX=10
+
+set.seed(15) 
+nfolds <- 5 
+foldIDx <- cvGenStratified(LABELS,nfolds)
+
+ranking_list = matrix(0,nfolds,nVarsMAX) #Para acumular los distintos rankings
+
+#Para recoger los datos de accuracy y F-Score tanto en train como en test:
+ACC_Train <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+ACC_Test  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+F1_Train <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+F1_Test  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+
+#Ralizamos la extracción de genes diferencialmente expresados sobre el conjunto total de datos:
+DEGsInfo <- DEGsExtraction(MATRIZ, LABELS, lfc = 0.2, pvalue = 0.001, cov = 1)
+DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
+MLMatrix <- t(DEGsMatrix)
+MLLabels <- LABELS
+
+for(particion in seq(1:nfolds)){ # para ejecuciones CV
+    indexTest <- which(foldIDx == particion)
+    indexTrn  <- which(foldIDx != particion)
+    
+    XTrn <- MATRIZ[,indexTrn]
+    YTrn <- LABELS[indexTrn]
+    XTest <- MATRIZ[,indexTest]
+    YTest <- LABELS[indexTest]
+    
+    ranking <- featureSelection(MLMatrix[indexTrn,], MLLabels[indexTrn], mode = "rf", vars_selected = colnames(MLMatrix), maxGenes=nVarsMAX)
+    #print(ranking)
+    ranking_list[particion,] = ranking[1:nVarsMAX]
+
+    model_trn <- logistic_trn2(MLMatrix, MLLabels, vars_selected = ranking[1:nVarsMAX])
+    model_test <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = ranking[1:nVarsMAX], model_trn)
+    
+    ACC_Train[particion,] <- model_trn$accuracyInfo$meanAccuracy
+    ACC_Test[particion,]  <- model_test$accVector
+    
+    F1_Train[particion,] <- model_trn$F1Info$meanF1
+    F1_Test[particion,]  <- model_test$f1Vector
+}
+```
+
+Y mostramos los resultados de la ejecución anterior:
+
+```{r}
+nVarsMAX=10
+
+#Calculamos los valores medios de Accuracy y F1-Score para Train y Test:
+ACC_Train_Mean <- colMeans(ACC_Train)
+ACC_Test_Mean <- colMeans(ACC_Test)
+F1_Train_Mean <- colMeans(F1_Train)
+F1_Test_Mean <- colMeans(F1_Test)
+
+#Mostramos gáficamente los resultados:
+plot(1:nVarsMAX, ACC_Train_Mean[1:nVarsMAX], "l", col="green", ylim=c(0.0,1.0), ylab='Métricas')
+lines(1:nVarsMAX, ACC_Test_Mean[1:nVarsMAX],"l",lty=2, col="green")
+grid()
+lines(1:nVarsMAX, F1_Train_Mean[1:nVarsMAX],"l",col="black")
+lines(1:nVarsMAX, F1_Test_Mean[1:nVarsMAX],"l", lty=2, col="black")
+title(main = "LR-RF con 5CV")
+legend("bottomright",c("F-Score Train", "F-Score Test", "Accuracy Train", "Accuracy Test"), col=c("green","green","black","black"),lty=c(1,2,1,2), cex=1)
+
+#Mostramos los 5 rankings:
+print(ranking_list[,1:10])
+```
+
+A la vista de los resultados anteriores, parece que 4 genes es el número óptimo.
+
+Seleccionamos ahora la huella observando los 5 rankings anteriores.
+
+```{r}
+numGenes <- 4
+huella <- c("hsa.mir.186", "hsa.mir.592", "hsa.mir.197", "hsa.mir.203a")
+```
+
+Y evaluamos el modelo final tomando la huella seleccionada. Lo hacemos mediante una validación cruzada en 5 partes sobre el conjunto total de datos.
+
+```{r, include=FALSE, message=FALSE}
+set.seed(15) 
+nfolds <- 5 
+foldIDx <- cvGenStratified(LABELS,nfolds)
+
+ACC_Test  <- numeric(nfolds)
+F1_Test  <- numeric(nfolds)
+conf_matrix <- matrix(0, nrow = 3, ncol = 3)
+
+for(particion in seq(1:nfolds)){ # para ejecuciones CV
+    indexTest <- which(foldIDx == particion)
+    indexTrn  <- which(foldIDx != particion)
+    
+    XTrn <- MATRIZ[,indexTrn]
+    YTrn <- LABELS[indexTrn]
+    XTest <- MATRIZ[,indexTest]
+    YTest <- LABELS[indexTest]
+    
+    model_trn <- logistic_trn2(MLMatrix[indexTrn,], MLLabels[indexTrn], vars_selected = huella)
+    model_test <- logistic_test_multiclase(MLMatrix[indexTrn,], MLLabels[indexTrn], t(XTest), YTest, huella, model_trn)
+    
+    ACC_Test[particion]  <- model_test$accVector[numGenes]
+    F1_Test[particion]  <- model_test$f1Vector[numGenes]
+    
+    conf_matrix <- conf_matrix + model_test$cfMats[[numGenes]]$table
+}
+```
+
+Y mostramos los resultados finales sobre test a través de la siguiente matriz de confusión:
+
+```{r}
+mean(ACC_Test)
+mean(F1_Test)
+
+dataPlot(conf_matrix, mode = "confusionMatrix")
+```
