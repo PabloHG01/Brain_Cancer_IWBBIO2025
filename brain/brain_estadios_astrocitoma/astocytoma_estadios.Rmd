@@ -68,7 +68,7 @@ countsMatrix <- countsInfo$countsMatrix
 labels <- countsInfo$labels
 ```
 
-- Consultamos los Gene Symbols y el GC content de cada gen y los valores de expresion usando la matriz de count y la anotación previamente adquirida:
+- Consultamos los Gene Symbols y el GC content de cada gen y los valores de expresion usando la matriz de count y getGenesAnnotation anotación previamente adquirida:
 
 ```{r}
 myAnnotation <- getGenesAnnotation(rownames(countsMatrix))
@@ -86,7 +86,7 @@ save(geneExprMatrix, file='geneExprMatrix')
 load(file = 'geneExprMatrix')
 ```
 
-- Realizamos el analisis de calidad y se seleccionan las muestras que pasen por el filtro (no outliers):
+- Realizamos el analisis de calidad y se seleccionan las muestras que pasen por el filtro (no outliers) con RNAseqQA:
 
 ```{r, eval=F}
 QAResults <- RNAseqQA(geneExprMatrix, toRemoval = TRUE, 
@@ -118,7 +118,7 @@ save(LABELS, file = 'LABELS')
 ```{r}
 load(file = 'MATRIZ')
 load(file = 'LABELS')
-
+table(LABELS) # clases después del preprocesamiento
 #rownames(MATRIZ)<- make.names(rownames(MATRIZ))
 ```
 
@@ -374,6 +374,9 @@ knn_results_mrmr <- rbind(knn_trn_mrmr$F1Info$meanF1[1:10],knn_trn_mrmr$accuracy
 knn_test_mrmr<-knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = names(FSRankingMRMR[1:10]), bestK=knn_trn_mrmr$bestK)
 knn_results_mrmr_test <- rbind(knn_trn_mrmr$F1Info$meanF1[1:10], knn_test_mrmr$f1Vector, knn_trn_mrmr$accuracyInfo$meanAccuracy, knn_test_mrmr$accVector)
 ```
+```{r}
+knn_trn_mrmr$F1Info$meanF1[1:10]
+```
 
 ```{r, echo=F}
 #dataPlot(knn_results_mrmr_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
@@ -417,6 +420,9 @@ knn_results_rf <- rbind(knn_trn_rf$F1Info$meanF1[1:10],knn_trn_rf$accuracyInfo$m
 # Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
 knn_test_rf <- knn_test(MLMatrix, MLLabels, t(XTest), YTest, vars_selected= FSRankingRF[1:10], bestK=knn_trn_rf$bestK)
 knn_results_rf_test <- rbind(knn_trn_rf$F1Info$meanF1[1:10], knn_test_rf$f1Vector, knn_trn_rf$accuracyInfo$meanAccuracy, knn_test_rf$accVector)
+```
+```{r}
+knn_test_rf$f1Vector
 ```
 
 ```{r, echo=F}
@@ -604,6 +610,11 @@ load('rf_test_rf')
 rf_results_rf_test <- rbind(rf_trn_rf$F1Info$meanF1[1:10], rf_test_rf$f1Vector, rf_trn_rf$accuracyInfo$meanAccuracy, rf_test_rf$accVector)
 #dataPlot(rf_results_rf_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
 ```
+
+```{r}
+rf_test_rf$f1Vector
+```
+
 
 ```{r,echo=FALSE}
 #png('f6.png',width = 800, height = 600)
@@ -1043,6 +1054,9 @@ svm_results_mrmr <- rbind(svm_trn_mrmr$F1Info$meanF1[1:10],svm_trn_mrmr$accuracy
 svm_test_mrmr <- svm_test2(MLMatrix, MLLabels, t(XTest), YTest, vars_selected=names(FSRankingMRMR[1:10]), bestParameters= svm_trn_mrmr$bestParameters)
 svm_results_mrmr_test <- rbind(svm_trn_mrmr$F1Info$meanF1[1:10], svm_test_mrmr$f1Vector, svm_trn_mrmr$accuracyInfo$meanAccuracy, svm_test_mrmr$accVector)
 ```
+```{r}
+svm_test_mrmr$f1Vector
+```
 
 
 ```{r, echo=F}
@@ -1092,12 +1106,13 @@ svm_results_rf_test <- rbind(svm_trn_rf$F1Info$meanF1[1:10], svm_test_rf$f1Vecto
 ```
 
 ```{r, echo=F}
+svm_test_rf$f1Vector
 #dataPlot(svm_results_rf_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
 ```
 
 
 ```{r,echo=FALSE}
-#png('f10.png',width = 800, height = 600)
+png('f10.png',width = 600, height = 400)
 num_genes <- 1:10
 Trn_F1 <- svm_results_rf_test[1,1:10]
 Test_F1 <- svm_results_rf_test[2,1:10]
@@ -1207,3 +1222,222 @@ Como vemos es una de las peores combinaciones clasificador-seleccionador hasta e
 En el caso del clasificador SVM, si seleccionamos características DA o con MB, se tiene un accuracy muy poco superior al 40% con una huella de 2 genes; con una opción muy baja a mejora si aumentamos esta huella. Sin embargo, para el algoritmo de selección mRMR y una huella de seis genes, el accuracy es del 62.5%, igual al del Random Forest con la misma huella. Además, para Random Forest es con el que también se obtiene mayor porcentaje de F1, 60%. Por ello, nos quedaremos con esta última combinación.
 
 
+# 4.  Resultados bajo el algoritmo de selección y clasificador escogidos en 5CV
+
+En la siguiente sección, se seleccionará la combinación óptima de algoritmo de selección y clasificador, con vista a la sección anterior, y se validará su rendimiento utilizando una validación cruzada de 5 particiones (5CV). Se evaluará el desempeño del modelo en los conjuntos de entrenamiento (Train) y prueba (Test) mediante gráficos que muestran la evolución del número de genes seleccionados y los resultados medios en las cinco particiones. Además, se proporcionarán los cinco rankings de genes más relevantes y se escogerá la huella génica final basada en su consistencia y relevancia.
+
+En primer lugar, el algoritmo de selección de variables elegido es el **rf** y el clasificador será **SVM**; ya que es con el que se ha obtenido mejores valores de Accuracy, F1, sensibilidad y especificidad. 
+
+```{r, echo=F}
+#png('h.png', width = 800, height = 600)
+dataPlot(svm_trn_rf, MLLabels, mode='heatmapResults')
+```
+
+
+En segundo lugar, se presenta el siguiente código con el objetivo de mostar resultado, para el modelo de regresión logística con una penalización de $decay = 10^{-4}$ (la objetenida con el modelo `logistic_trn_mrmr` en la sección anterior) y utilizando el seleccionador de características mRMR, en 5CV Trn-Test para todo el dataset:
+
+```{r, results='hide'}
+set.seed(19)
+
+nfolds <- 5  # Número de particiones en la validación cruzada
+foldIDx <- cvGenStratified(MLLabels, nfolds)  # Particiones estratificadas
+
+nVarsMAX <- 20  # Número máximo de genes a seleccionar, en un ejercicio de clase se aumentó hasta 50
+PREDICCIONES_SVM <- matrix(0, nVarsMAX, length(MLLabels)) # Matriz para almacenar predicciones y facilitar su acceso 
+
+# Matrices para almacenar métricas por partición
+ACCTrnSVM <- matrix(0, nfolds, nVarsMAX)
+ACCTestSVM <- matrix(0, nfolds, nVarsMAX)
+
+# Matriz de confusión acumulada para el test
+accTestSum <- matrix(0, nrow = length(unique(YTest)), ncol = length(unique(YTest))) 
+
+# Para almacenar los ranking de caracterñisticas de cada partición
+rankingSRF <- matrix(0, nfolds, nVarsMAX) 
+
+# Bucle para 5 particiones
+for (particion in seq(1, nfolds)) {
+  # Crear particiones de entrenamiento y prueba
+  datosParaTRN <- which(foldIDx != particion)  # Índices de entrenamiento
+  segmentoTest <- which(foldIDx == particion)  # Índices de prueba
+  
+  XTrn_P <- as.data.frame(MLMatrix[datosParaTRN, ])  # Datos de entrenamiento
+  XTest_P <- as.data.frame(MLMatrix[segmentoTest, ])  # Datos de prueba
+  
+  YTrn_P <- as.factor(MLLabels[datosParaTRN])  # Etiquetas de entrenamiento
+  YTest_P <- as.factor(MLLabels[segmentoTest])  # Etiquetas de prueba
+  
+  # Ranking con mRMR
+  rankingRF <-featureSelection(XTrn_P, YTrn_P, mode = "rf", vars_selected = colnames(XTrn_P))
+  
+  # Guardar POR FILAS el ranking de características para esta partición 
+  rankingSRF[particion, ] <- rankingRF[1:nVarsMAX]
+  
+  # Evaluación por número de genes seleccionados
+  for (numGenes in seq_len(nVarsMAX)) {
+    # Seleccionar las mejores variables
+    topGenes <- colnames(XTrn_P)[match(rankingRF[1:numGenes], colnames(XTrn_P))]
+    
+    # Entrenar modelo SVM 0.1 en ambos hiperparámetros
+    modelo <- svm(x = XTrn_P[, topGenes], y = YTrn_P, kernel='radial', cost=0.1, gamma=0.1, probability=TRUE)
+    
+    # Predicciones en Train
+    predTrain <- predict(modelo, XTrn_P[, topGenes])
+    confMatTrain <- confusionMatrix(as.factor(predTrain), as.factor(YTrn_P))
+    ACCTrnSVM[particion, numGenes] <- confMatTrain$overall["Accuracy"]
+    
+    # Predicciones en Test
+    predTest <- predict(modelo, t(XTest)[, topGenes]) ################################
+    confMatTest <- confusionMatrix(as.factor(predTest), as.factor(YTest)) 
+    ACCTestSVM[particion, numGenes] <- confMatTest$overall["Accuracy"] # se van añadiendo los       valores por filas. Por tanto, para calcular la media de los accuracy para un número             determinado de genes que hacerlo por columnas.
+    
+    #print(confMatTest$overall[1])
+    #print(confMatTest$table)
+    # Guardar predicciones de Test
+    #PREDICCIONES_SVM[particion, segmentoTest] <- as.numeric(predTest)
+    
+    # Sumar la matriz de confusión al total
+    accTestSum <- accTestSum + confMatTest$table 
+  }
+  
+  # Graficar los resultados para la partición actual
+  num_genes <- 1:nVarsMAX
+  Trn_Acc <- ACCTrnSVM[particion, 1:nVarsMAX]
+  Test_Acc <- ACCTestSVM[particion, 1:nVarsMAX]
+  
+  plot(num_genes, Trn_Acc, type = "l", col = "green", ylim = c(0.5, 1), ylab = "Accuracy",        xlab = "Número de genes seleccionados", main = paste("Partición", particion, "- SVM con mRMR"))
+  lines(num_genes, Test_Acc, col = "black", lty = 2)
+  axis(1, at = 1:20, labels = 1:20)  # Configura los ticks y etiquetas del eje X
+  grid()
+  legend("bottomright", legend = c("Train Accuracy", "Test Accuracy"),col=c("green","black"),lty = c(1, 2))
+}
+
+# Medias de Accuracy en las 5 particiones
+ACCTrnSVM_Mean <- colMeans(ACCTrnSVM)
+ACCTestSVM_Mean <- colMeans(ACCTestSVM)
+
+# Resultados promedio
+plot(1:nVarsMAX, ACCTrnSVM_Mean, type = "l", col = "green", ylim = c(0.5, 1), xlim=c(1,10), xlab = "Número de genes seleccionados", ylab = "Accuracy", main = "Resultados Promedio RL con mRMR")
+lines(1:nVarsMAX, ACCTestSVM_Mean, col = "black")
+axis(1, at = 1:10, labels = 1:10)  # Configura los ticks y etiquetas del eje X
+grid()
+legend("bottomright", legend = c("Train Accuracy", "Test Accuracy"), col = c("green", "black"),
+       lty = c(1, 1))
+
+```
+
+
+```{r}
+ACCTrnSVM_Mean
+```
+```{r}
+ACCTestSVM_Mean
+```
+Creo que es apropiado escoger una huella de entre 3 y 4 genes.
+
+```{r}
+# Se observan la variable
+rankingSRF[,1:5]
+```
+Observando lo obteniedo se cree que es más apropiado escoger una huella de 3 genes ya que: 
+- SNORA63D (5 veces)
+- KRT33A (3 veces)
+- CACNG2 (3 veces)
+- MKI67 (2 veces)
+Por ello, los genes elegidos son SNORA63D, KRT33A y CACNG2.
+
+## 4.1. Resultado de la huella final escogida y clasificador en 5 CV, matriz de confusión final del dataset.
+
+Podemos comenzar esta sección calculando la matriz final del modelo conocida la huella volviendo a probar en 5CV con el número de genes escogidos, es decir, *numGenes <- 5*:
+
+```{r, results='hide'}
+set.seed(19)
+
+nfolds <- 3  # Número de particiones en la validación cruzada
+foldIDx <- cvGenStratified(LABELS, nfolds)  # Particiones estratificadas
+
+# Vectores para almacenar métricas por partición
+ACCTrnRL <- numeric(nfolds)
+ACCTestRL <- numeric(nfolds)
+
+# Matriz de confusión acumulada para el test
+accTestSum <- matrix(0, nrow = 2, ncol = 2)
+
+# Ranking con mRMR
+huella <- c("SNORA63D", "KRT33A", "CACNG2")
+
+# Bucle para 5 particiones
+for (particion in seq_len(nfolds)) {
+  # Crear particiones de entrenamiento y prueba
+  datosParaTRN <- which(foldIDx != particion)  # Índices de entrenamiento
+  segmentoTest <- which(foldIDx == particion)  # Índices de prueba
+  
+  XTrn_P <- as.data.frame(t(MATRIZ[,datosParaTRN])) # Datos de entrenamiento
+  XTest_P <- as.data.frame(t(MATRIZ[,segmentoTest]))  # Datos de prueba
+  
+  YTrn_P <- as.factor(LABELS[datosParaTRN])  # Etiquetas de entrenamiento
+  YTest_P <- as.factor(LABELS[segmentoTest])  # Etiquetas de prueba
+  
+  modelo <- svm(x = XTrn_P[, huella], y = YTrn_P, kernel='radial', cost=0.1, gamma=0.1, probability=TRUE)
+  
+  # Predicciones en Test
+  predTest <- predict(modelo, XTest_P[, huella])
+  confMatTest <- confusionMatrix(as.factor(predTest), YTest_P)
+  #print(confMatTest$table)
+  ACCTestRL[particion] <- confMatTest$overall["Accuracy"]
+
+  
+  # Sumar la matriz de confusión al total
+  accTestSum <- accTestSum + confMatTest$table
+}
+```
+
+```{r}
+print("Matriz de confusión acumulada en el test:")
+accTestSum
+```
+
+```{r}
+table(LABELS)
+```
+La suma por columnas coincide.
+
+Finalmente, con estos cinco genes seleccionados, se harán dos particiones sobre MLMatrix y MLLabels, train (80%) y test (20%) con el objetivo de entrenar un modelo regresión logística y buscar los mejores parámetros para este problema con un GridSearch. Para concluir esta sección se predecirán las clases de conjuto test y evaluaremos el desempeño del modelo con una matriz de confusión:
+
+```{r, eval= F, echo=F}
+# Filtrar los datos para incluir solo los genes seleccionados
+X_selected <- as.data.frame( MLMatrix[, c("IGHV3-73", "IGHV6-1", "UBQLN4P1", "PI4K2B", "RAPH1")])# Seleccionar columnas correspondientes
+Y <- as.factor(MLLabels)  # Etiquetas de clase
+
+# Crear particiones: 80% Train, 20% Test
+set.seed(19)  
+
+trainIndex <- createDataPartition(Y, p = 0.8, list = FALSE)
+X_train <- X_selected[trainIndex, ]
+Y_train <- Y[trainIndex]
+X_test <- X_selected[-trainIndex, ]
+Y_test <- Y[-trainIndex]
+
+# GridSearch para Regresión Logística Multinomial: Definir el parámetro decay a probar
+grid <- expand.grid(.decay = c(0.0001, 0.01, 0.1, 1))
+
+# Entrenar el modelo con validación cruzada
+train_control <- trainControl(method = "cv", number = 5)  # Validación cruzada de 5 pliegues
+
+# Modelo de Regresión Logística Multinomial
+logistic_model <- train(x = X_train, y = Y_train, method = "multinom", trControl = train_control, tuneGrid = grid)
+
+# Mejores hiperparámetros encontrados
+best_params <- logistic_model$bestTune
+best_params
+
+# Entrenar el modelo con el mejor parámetro decay
+final_model <- multinom(Y_train ~ ., data = cbind(X_train, Y_train), decay = best_params$decay)
+
+# Predicciones en el conjunto de prueba
+pred_test <- predict(final_model, X_test)
+conf_matrix <- confusionMatrix(pred_test, Y_test)
+conf_matrix
+```
+
+En conclusión, el mejor valor de `deacy` es 0.0001, lo que ha permitido obtener una precisión del 65.43% en el conjunto de prueba. Este rendimiento, aunque no es extremadamente alto, aunque refleja un desempeño razonable al clasificar las tres clases. En cuanto a los estadísticos por clase, la sensibilidad es particularmente alta en astrocytoma con un 93.33%, lo que indica que el modelo es eficaz para identificar correctamente los positivos en esta clase, al igual que para la clase oligodendroglioma con un 80% de acierto. Por ello, el Balanced Accuracy, que considera tanto la sensibilidad como la especificidad, muestra buenos valores, especialmente en astrocytoma (83.92%) y oligodendroglioma (77.25%). Sin embargo, el valor predictivo positivo es algo bajo en mixed_glioma (33.33%), pero aún se mantiene a un buen nivel en astrocytoma (68.29%) y oligodendroglioma (64.86%). Así, es importante destacar que mixed_glioma presenta un desafío, con una sensibilidad baja (4.76%) y un rendimiento general más débil, lo que se refleja en los errores de clasificación en la matriz de confusión.
