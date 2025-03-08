@@ -195,7 +195,7 @@ YTest<-LABELS[indexTest]
 
 ```{r, eval=F, results='hide'}
 # Definir los valores de LFC y COV a probar
-LFC_values <- c(0.25, 0.4, 0.5, 0.6, 0.75, 1, 1.5, 2) 
+LFC_values <- c(0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.75, 1) 
 COV_values <- c(1, 2)
 p_values <- c(0.001, 0.0005, 0.0001)
 
@@ -247,7 +247,7 @@ resultado_filtrados
 Observando lo anterior elegimos, por ejemplo, lfc = 0.15 y cov = 1 para obtener la DEGsMatrix.
 
 ```{r}
-DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = 0.4, cov = 1, pvalue=0.001)
+DEGsInfo <- DEGsExtraction(XTrn, YTrn, lfc = 0.40, cov = 1, pvalue=0.001)
 DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
 #png('2b.png', width = 800, height = 600)
 dataPlot(DEGsMatrix[1:6,], YTrn, mode = "genesBoxplot")
@@ -1322,62 +1322,56 @@ En segundo lugar, se presenta el siguiente código con el objetivo de mostar res
 ```{r}
 nVarsMAX=10
 
-set.seed(15) 
+set.seed(19) 
 nfolds <- 5 
-foldIDx <- cvGenStratified(LABELS,nfolds)
+foldIDx <- cvGenStratified(MLLabels,nfolds)
 
 ranking_list = matrix(0,nfolds,nVarsMAX) #Para acumular los distintos rankings
 
 #Para recoger los datos de accuracy y F-Score tanto en train como en test:
 ACC_Train <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
-ACC_Test  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+ACC_Val  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
 F1_Train <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
-F1_Test  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
-
-#Ralizamos la extracción de genes diferencialmente expresados sobre el conjunto total de datos:
-DEGsInfo <- DEGsExtraction(MATRIZ, LABELS, lfc = 0.2, pvalue = 0.001, cov = 1)
-DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
-MLMatrix <- t(DEGsMatrix)
-MLLabels <- LABELS
+F1_Val  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
 
 for(particion in seq(1:nfolds)){ # para ejecuciones CV
     indexTest <- which(foldIDx == particion)
     indexTrn  <- which(foldIDx != particion)
     
-    XTrn <- MATRIZ[,indexTrn]
-    YTrn <- LABELS[indexTrn]
-    XTest <- MATRIZ[,indexTest]
-    YTest <- LABELS[indexTest]
+    XTrn <- MLMatrix[indexTrn, ]
+    YTrn <- MLLabels[indexTrn]
+    XVal <- MLMatrix[indexTest, ]
+    YVal <- MLLabels[indexTest]
     
-    ranking <- featureSelection(MLMatrix[indexTrn,], MLLabels[indexTrn], mode = "mrmr", vars_selected = colnames(MLMatrix), maxGenes=nVarsMAX)
+    ranking <- featureSelection(XTrn, YTrn, mode = "mrmr", vars_selected = colnames(MLMatrix), maxGenes=nVarsMAX)
     #print(ranking)
     ranking_list[particion,] = ranking[1:nVarsMAX]
 
-    model_trn <- knn_trn(t(XTrn), YTrn, vars_selected = names(FSRankingMRMR[1:10])) 
-    model_test <- knn_test(t(XTrn), YTrn, t(XTest), YTest, vars_selected = names(FSRankingMRMR[1:10]), bestK=model_trn$bestK)
+    model_trn <- knn_trn(XTrn, YTrn, vars_selected = names(ranking[1:10])) 
+    model_val <- knn_test(XTrn, YTrn, XVal, YVal, vars_selected = names(ranking[1:10]), bestK=model_trn$bestK)
     
     ACC_Train[particion,] <- model_trn$accuracyInfo$meanAccuracy
-    ACC_Test[particion,]  <- model_test$accVector
+    ACC_Val[particion,]  <- model_val$accVector
     
     F1_Train[particion,] <- model_trn$F1Info$meanF1
-    F1_Test[particion,]  <- model_test$f1Vector
+    F1_Val[particion,]  <- model_val$f1Vector
 }
 ```
 ```{r}
 #Calculamos los valores medios de Accuracy y F1-Score para Train y Test:
 ACC_Train_Mean <- colMeans(ACC_Train)
-ACC_Test_Mean <- colMeans(ACC_Test)
+ACC_Val_Mean <- colMeans(ACC_Val)
 F1_Train_Mean <- colMeans(F1_Train)
-F1_Test_Mean <- colMeans(F1_Test)
+F1_Val_Mean <- colMeans(F1_Val)
 
 #Mostramos gáficamente los resultados:
 plot(1:nVarsMAX, ACC_Train_Mean[1:nVarsMAX], "l", col="black", ylim=c(0.0,1.0), ylab='Métricas')
-lines(1:nVarsMAX, ACC_Test_Mean[1:nVarsMAX],"l",lty=2, col="black")
+lines(1:nVarsMAX, ACC_Val_Mean[1:nVarsMAX],"l",lty=2, col="black")
 grid()
 lines(1:nVarsMAX, F1_Train_Mean[1:nVarsMAX],"l",col="green")
-lines(1:nVarsMAX, F1_Test_Mean[1:nVarsMAX],"l", lty=2, col="green")
-title(main = "LR-RF con 5CV")
-legend("bottomright",c("F-Score Train", "F-Score Test", "Accuracy Train", "Accuracy Test"), col=c("green","green","black","black"),lty=c(1,2,1,2), cex=1)
+lines(1:nVarsMAX, F1_Val_Mean[1:nVarsMAX],"l", lty=2, col="green")
+title(main = "KNN-MRMR con 5CV")
+legend("bottomright",c("F-Score Train", "F-Score Val", "Accuracy Train", "Accuracy Val"), col=c("green","green","black","black"),lty=c(1,2,1,2), cex=1)
 
 #Mostramos los 5 rankings:
 print(ranking_list[,1:10])
@@ -1388,7 +1382,7 @@ print(ranking_list[,1:10])
 # Se observan la variable rankingSMRMR
 ranking_list[,1:5]
 # rankingMRMR de la última iteración pero solo lo utilizamos para saber el nombre de los genes
-colnames(MLMatrix)[c(226, 751, 621)]
+colnames(MLMatrix)[c(125, 72, 54, 9, 68)]
 ```
 ## 4.1. Resultado de la huella final escogida y clasificador en 5 CV, matriz de confusión final del dataset.
 
@@ -1408,8 +1402,8 @@ F1_Test  <- numeric(nfolds)
 conf_matrix <- matrix(0, nrow = 2, ncol = 2)
 
 # Ranking con mRMR
-huella <- c("IGHV3-73", "SP140", "IGHV6-1")
-num_genes <- 3
+huella <- c("MMD2", "PRPSAP1", "CD37", "GPR155", "KCNJ11")
+num_genes <- 5
 
 # Bucle para 5 particiones
 for (particion in seq_len(nfolds)) {
