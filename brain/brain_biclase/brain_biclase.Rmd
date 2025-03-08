@@ -452,7 +452,9 @@ Cuando num_genes = 5, se estabiliza las curvas alcanzando el 60% de acierto (acc
 
 ```{r,echo=F}
 #png('m1.png', width = 500, height = 400)
-dataPlot(knn_test_mrmr$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-2
+dataPlot(knn_test_mrmr$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+knn_test_mrmr$f1Vector[num_opt_genes]
 #dev.off()
 
 #Podríamos elegir 3, pero la mejora es mínima
@@ -501,7 +503,9 @@ Mientras que el accuracy se mantiene muy constante para el conjunto train, cuand
 
 ```{r}
 #png('m2.png', width = 500, height = 400)
-dataPlot(knn_test_rf$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-2
+dataPlot(knn_test_rf$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+knn_test_rf$f1Vector[num_opt_genes]
 ```
 En segundo lugar, para una huella de seis genes:
 
@@ -548,7 +552,9 @@ Parece que a partir de 10 genes, dejan de haber picos muy pronunciados para el t
 
 ```{r, echo=F}
 #png('m3.png', width = 500, height = 400)
-dataPlot(knn_test_da$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-2
+dataPlot(knn_test_da$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+knn_test_da$f1Vector[num_opt_genes]
 ```
 
 ### 3.1.4. Selección de variables con FSRanking_MB:
@@ -579,7 +585,9 @@ Parece que sería apropiado escoger 10 genes o 14 aunque es a partir de 18 genes
 
 ```{r, echo=F}
 #png('m4.2.png', width = 500, height = 400)
-dataPlot(knn_test_mb$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-4
+dataPlot(knn_test_mb$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+knn_test_mb$f1Vector[num_opt_genes]
 ```
 
 No se obtiene una buena clasificación para la cantidad de genes elegidos. Por tanto, la combinación clasificador-seleccionador para el ejemplo del cáncer de cerebro no es apropiada.
@@ -639,7 +647,9 @@ De la gráfica anterior destaca la armonía entre el accuracy y el F1 para el co
 
 ```{r, echo=F}
 #png('m5.png', width=500, height = 400)
-dataPlot(rf_test_mrmr$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-2
+dataPlot(rf_test_mrmr$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+rf_test_mrmr$f1Vector[num_opt_genes]
 ```
 
 Este es el modelo con mayor porcentaje de acierto y menor huella hasta el momento.
@@ -690,7 +700,9 @@ Como en el caso anterior, la mejor huella es cuando num_genes = 2. A continuaci�
 
 ```{r, echo=F}
 #png('m6.png', width=500, height = 400)
-dataPlot(rf_test_rf$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-3
+dataPlot(rf_test_rf$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+rf_test_rf$f1Vector[num_opt_genes]
 ```
 
 Destaca que el accuracy en este caso y en el anterior para una huella de 2 genes, es el mismo. Por tanto, para distinguirlos podríamos fijarnos en que el F1-score para el ranking del método mRMR (59.1%) es algo mayor que en este caso.
@@ -741,7 +753,9 @@ Se observa que, en este caso, el F1-score y el accuracy son más bajos. Además,
 
 ```{r, echo=F}
 #png('m7.png', width=500, height = 400)
-dataPlot(rf_test_da$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-2
+dataPlot(rf_test_da$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+rf_test_da$f1Vector[num_opt_genes]
 ```
 
 Con la mejor huella para el conjunto train, el test a penas acierta en el 50% de las ocasiones.
@@ -783,7 +797,9 @@ Destaca el descenso del F1-score para el conjunto train a partir de 3 genes. Ele
 
 ```{r, echo=F}
 #png('m8.png', width=500, height = 400)
-dataPlot(rf_test_da$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes=4
+dataPlot(rf_test_mb$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+rf_test_mb$f1Vector[num_opt_genes]
 ```
 
 ### 3.2.5. Conclusiones 
@@ -1138,7 +1154,9 @@ En este caso, para num_genes = 6, destaca el pico de F1 para el conjunt train, p
 
 ```{r, echo=F}
 #png('m9.png', width=500, height = 400)
-dataPlot(svm_test_mrmr$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-3
+dataPlot(svm_test_mrmr$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+svm_test_mrmr$f1Vector[num_opt_genes]
 ```
 Cabe destacar que ningún astocitoma u oligodendroglioma se ha predicho como glioma mixto. Sin embargo, al contrario sí y en numerosas ocasiones, 17 y 6, respectivamente.
 
@@ -1183,11 +1201,12 @@ lines(num_genes, Test_Acc,"l",lty = 2)
 legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
 ```
 
-En este caso, elegiría una huella de 4 genes ya que, a partir de ahí, el crecimeinto del F1 y accuracy en train es gradual. Sin embargo, si observamos las métricas del conjunto test, en realidad comienzan a ascender a partir de 6 genes. Vemaos así, la matriz de confusión para el conjunto test cuando la huella es 4:
 
 ```{r}
 #png('m10.png', width=500, height = 400)
-dataPlot(svm_test_rf$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-3
+dataPlot(svm_test_rf$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+svm_test_rf$f1Vector[num_opt_genes]
 ```
 
 ### 3.3.3. Selección de variables con FSRankingDA:
@@ -1234,9 +1253,10 @@ A partir de 2 genes, aparece que el accuracy el F1 para el conjunto de entrenami
 
 ```{r,echo=F}
 #png('m11.png', width=500, height = 400)
-dataPlot(svm_test_da$cfMats[[2]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-2
+dataPlot(svm_test_da$cfMats[[num_opt_genes]]$table, MLLabels, mode = "confusionMatrix")
+svm_test_da$f1Vector[num_opt_genes]
 ```
-La clase glioma mixto no es predecida por el modelo. Además, tiene un accracy muy bajo, el cuál para una huella de 5 genes mejora al 55%. Este aumento no mejora notablemente la clasificación del modelo.
 
 ### 3.3.4. Selección de variables con FSRanking_MB:
 
@@ -1273,7 +1293,9 @@ Si nos fijamos en el accuracy y el F1 del train, podríamos escoger una huella d
 
 ```{r, echo=F}
 #png('m12.png', width=500, height = 400)
-dataPlot(svm_test_mb$cfMats[[4]]$table, MLLabels, mode = "confusionMatrix")
+num_opt_genes<-4
+dataPlot(svm_test_mb$cfMats[[num_opt_genes=2]]$table, MLLabels, mode = "confusionMatrix")
+svm_test_mb$f1Vector[num_opt_genes]
 ```
 Como vemos es una de las peores combinaciones clasificador-seleccionador hasta el momento.
 
@@ -1281,519 +1303,6 @@ Como vemos es una de las peores combinaciones clasificador-seleccionador hasta e
 
 En el caso del clasificador SVM, si seleccionamos características DA o con MB, se tiene un accuracy muy poco superior al 40% con una huella de 2 genes; con una opción muy baja a mejora si aumentamos esta huella. Sin embargo, para el algoritmo de selección mRMR y una huella de seis genes, el accuracy es del 62.5%, igual al del Random Forest con la misma huella. Además, para Random Forest es con el que también se obtiene mayor porcentaje de F1, 60%. Por ello, nos quedaremos con esta última combinación.
 
-## 3.4. Clasificador Regresión Logística
-
-Se diseña en esta sección la sunción `logistic_train2` ayudandonos del código base de la función de KnowSeq `knn_trn`:
-
-```{r}
-data<-MLMatrix
-labels<-MLLabels
-vars_selected = names(FSRankingMRMR[1:10])
-numFold = 5
-logistic_trn2 <- function(data, labels, vars_selected, numFold = 10, LOOCV = FALSE){
-  
-  if (!is.data.frame(data) && !is.matrix(data)) {
-    stop("The data argument must be a dataframe or a matrix.")
-  }
-  if (dim(data)[1] != length(labels)) {
-    stop("The length of the rows of the argument data must be the same as the length of the labels. Please ensure that the rows are the samples and the columns are the variables.")
-  }
-  
-  if (!is.character(labels) && !is.factor(labels)) {
-    stop("The class of the labels parameter must be a character vector or factor.")
-  }
-  
-  if (is.character(labels)) {
-    labels <- as.factor(labels)
-  }
-  
-  if (numFold %% 1 != 0 || numFold == 0) {
-    stop("The numFold argument must be an integer and greater than 0.")
-  }
-  
-  data <- as.data.frame(apply(data, 2, as.double))
-  data <- data[, vars_selected]
-  
-  # Scaling the data between -1 and 1
-  data = vapply(data, function(x) { 
-    max_val <- max(x)
-    min_val <- min(x)
-    if (max_val > min_val) {
-      x <- ((x - min_val) / (max_val - min_val)) * 2 - 1
-    }
-    return(x)
-  }, double(nrow(data)))
-  
-  data <- as.data.frame(data)
-  
-  fitControl <- trainControl(method = "repeatedcv", number = numFold, repeats = 3)
-  cat("Tuning the optimal model...\n")
-  
-  # Use logistic regression with multinomial family for 3 classes
-  logistic_model <- train(data, labels, method = "glm", trControl = fitControl, preProcess = c("center", "scale"), family = "binomial")
-  
-  cat(paste("Optimal model tuned.\n"))
-  
-  if (LOOCV == FALSE) { 
-    accuracyInfo <- list()
-    sensitivityInfo <- list()
-    specificityInfo <- list()
-    f1Info <- list()
-    
-    acc_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
-    sens_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
-    spec_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
-    f1_cv <- matrix(0L, nrow = numFold, ncol = length(vars_selected))
-    
-    cfMatList <- list()
-    lengthValFold <- dim(data)[1] / numFold
-    
-    positions <- rep(seq_len(dim(data)[1]))
-    randomPositions <- sample(positions)
-    data <- data[randomPositions, ]
-    labels <- labels[randomPositions]
-    
-    for (i in seq_len(numFold)) {
-      cat("Running K-Fold Cross-Validation...\n")
-      cat(paste("Training fold ", i, "...\n", sep = ""))
-      
-      valFold <- seq(round((i - 1) * lengthValFold + 1), round(i * lengthValFold))
-      trainDataCV <- setdiff(seq_len(dim(data)[1]), valFold)
-      testDataset <- data[valFold, ]
-      trainingDataset <- data[trainDataCV, ]
-      labelsTrain <- labels[trainDataCV]
-      labelsTest <- labels[valFold]
-      
-      # Train logistic regression model for 3 classes
-      logistic_mod <- glm(labelsTrain ~ ., data = trainingDataset, family="binomial")
-      predicts <- predict(logistic_mod, testDataset)
-      
-      cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
-      acc_cv[i, 1] <- cfMatList[[i]]$overall[[1]]
-      
-      # Compute sensitivity, specificity, and F1 score
-      if (length(levels(labelsTrain))==2){
-          sens <- cfMatList[[i]]$byClass[[1]]
-          spec <- cfMatList[[i]]$byClass[[2]]
-          f1 <- cfMatList[[i]]$byClass[[7]]
-        } else{
-          sens <- mean(cfMatList[[i]]$byClass[,1])
-          spec <- mean(cfMatList[[i]]$byClass[,2])
-          f1 <- mean(cfMatList[[i]]$byClass[,7])
-        }
-      sens_cv[i, 1] <- sens
-      spec_cv[i, 1] <- spec
-      f1_cv[i, 1] <- f1
-      
-      if (is.na(sens_cv[i, 1])) sens_cv[i, 1] <- 0
-      if (is.na(spec_cv[i, 1])) spec_cv[i, 1] <- 0
-      #if (is.na(f1_cv[i, 1])) f1_cv[i, 1] <- 0
-      
-      for (j in 2:length(vars_selected)) {
-        logistic_mod <- glm(labelsTrain ~ ., data = trainingDataset[, 1:j], family="binomial")
-        predicts <- predict(logistic_mod, testDataset[, 1:j])
-        
-        cfMatList[[i]] <- confusionMatrix(predicts, labelsTest)
-        acc_cv[i, j] <- cfMatList[[i]]$overall[[1]]
-        
-        cfMatList[[i]]$byClass[, 1][is.na(cfMatList[[i]]$byClass[, 1])] <- 0
-        sens <- mean(cfMatList[[i]]$byClass[, 1])
-        cfMatList[[i]]$byClass[, 2][is.na(cfMatList[[i]]$byClass[, 2])] <- 0
-        spec <- mean(cfMatList[[i]]$byClass[, 2])
-        cfMatList[[i]]$byClass[, 7][is.na(cfMatList[[i]]$byClass[, 7])] <- 0
-        f1 <- mean(cfMatList[[i]]$byClass[, 7])
-        
-        sens_cv[i, j] <- sens
-        spec_cv[i, j] <- spec
-        f1_cv[i, j] <- f1
-        
-        if (is.na(sens_cv[i, j])) sens_cv[i, j] <- 0
-        if (is.na(spec_cv[i, j])) spec_cv[i, j] <- 0
-        #if (is.na(f1_cv[i, j])) f1_cv[i, j] <- 0
-      }
-    }
-    
-    # Calculate mean and standard deviation
-    meanAcc <- colMeans(acc_cv)
-    sdAcc <- apply(acc_cv, 2, sd)
-    accuracyInfo <- list(meanAcc, sdAcc)
-    names(accuracyInfo) <- c("meanAccuracy", "standardDeviation")
-    
-    meanSens <- colMeans(sens_cv)
-    sdSens <- apply(sens_cv, 2, sd)
-    sensitivityInfo <- list(meanSens, sdSens)
-    names(sensitivityInfo) <- c("meanSensitivity", "standardDeviation")
-    
-    meanSpec <- colMeans(spec_cv)
-    sdSpec <- apply(spec_cv, 2, sd)
-    specificityInfo <- list(meanSpec, sdSpec)
-    names(specificityInfo) <- c("meanSpecificity", "standardDeviation")
-    
-    meanF1 <- colMeans(f1_cv)
-    sdF1 <- apply(f1_cv, 2, sd)
-    F1Info <- list(meanF1, sdF1)
-    names(F1Info) <- c("meanF1", "standardDeviation")
-    
-    cat("Classification done successfully!\n")
-    results_cv <- list(cfMatList, accuracyInfo, sensitivityInfo, specificityInfo, F1Info, logistic_model)
-    names(results_cv) <- c("cfMats", "accuracyInfo", "sensitivityInfo", "specificityInfo", "F1Info", "logisticModel")
-    invisible(results_cv)
-  
-  } else {
-    # LOOCV section (Leave-One-Out Cross-Validation)
-    cat("Running Leave-One-Out Cross-Validation...\n")
-    accuracyInfo <- numeric()
-    sensitivityInfo <- numeric()
-    specificityInfo <- numeric()
-    F1Info <- numeric()
-    predictions <- list()
-    cfMatList <- list()
-    
-    for (i in 1:dim(data)[1]) {
-      # Perform LOOCV
-      trainDataCV <- setdiff(1:dim(data)[1], i)
-      testData <- data[i, , drop = FALSE]
-      trainLabels <- labels[trainDataCV]
-      testLabel <- labels[i]
-      
-      logistic_mod <- glm(labelsTrain ~ ., data = data[trainDataCV, , drop = FALSE], family="binomial")
-      predictLabel <- predict(logistic_mod, testData)
-      
-      cfMatList[[i]] <- confusionMatrix(predictLabel, testLabel)
-      accuracyInfo[i] <- cfMatList[[i]]$overall[[1]]
-      sensitivityInfo[i] <- cfMatList[[i]]$byClass[[1]]
-      specificityInfo[i] <- cfMatList[[i]]$byClass[[2]]
-      F1Info[i] <- cfMatList[[i]]$byClass[[7]]
-    }
-    
-    results_loocv <- list(cfMatList, accuracyInfo, sensitivityInfo, specificityInfo, F1Info)
-    names(results_loocv) <- c("cfMats", "accuracyInfo", "sensitivityInfo", "specificityInfo", "F1Info")
-    invisible(results_loocv)
-  }
-}
-```
-
-Se muestra a continuación la implementación de la función `logistic_test_multiclase`. Para crearla nos hemos ayudado de la función `svm_test`:
-
-```{r}
-library(nnet)
-logistic_test_multiclase <- function(tren, etiquetasTren, prueba, etiquetasPrueba, vars_selected, logistic_trn_mrmr) {
-  
-  # Validar tipos de datos de los argumentos
-  if (!is.data.frame(tren) && !is.matrix(tren)) {
-    stop("El argumento tren debe ser un marco de datos o una matriz.")
-  }
-  
-  if (dim(tren)[1] != length(etiquetasTren)) {
-    stop("La longitud de las filas del argumento tren debe ser la misma que la longitud de etiquetasTren.")
-  }
-  
-  if (!is.character(etiquetasTren) && !is.factor(etiquetasTren)) {
-    stop("La clase del parámetro etiquetasTren debe ser un vector de caracteres o un factor.")
-  }
-  if (is.character(etiquetasTren)) { etiquetasTren <- as.factor(etiquetasTren) }
-  
-  if (!is.character(etiquetasPrueba) && !is.factor(etiquetasPrueba)) {
-    stop("La clase del parámetro etiquetasPrueba debe ser un vector de caracteres o un factor.")
-  }
-  if (is.character(etiquetasPrueba)) { etiquetasPrueba <- as.factor(etiquetasPrueba) }
-  
-  if (!is.data.frame(prueba) && !is.matrix(prueba)) {
-    stop("El argumento prueba debe ser un marco de datos o una matriz.")
-  }
-  
-  if (dim(prueba)[1] != length(etiquetasPrueba)) {
-    stop("La longitud de las filas del argumento prueba debe ser la misma que la longitud de etiquetasPrueba.")
-  }
-  
-  # Seleccionar las variables necesarias de los datos
-  tren <- as.data.frame(apply(tren, 2, as.double))
-  tren <- tren[, vars_selected, drop = FALSE]
-  
-  prueba <- as.data.frame(apply(prueba, 2, as.double))
-  prueba <- prueba[, vars_selected, drop = FALSE]
-  
-  # Normalizar las características entre -1 y 1
-  tren <- vapply(tren, function(x) {
-    max_val <- max(x)
-    min_val <- min(x)
-    if (max_val > min_val) {
-      x <- ((x - min_val) / (max_val - min_val)) * 2 - 1
-    }
-    return(x)
-  }, double(nrow(tren)))
-  tren <- as.data.frame(tren)
-  
-  prueba <- vapply(prueba, function(x) {
-    max_val <- max(x)
-    min_val <- min(x)
-    if (max_val > min_val) {
-      x <- ((x - min_val) / (max_val - min_val)) * 2 - 1
-    }
-    return(x)
-  }, double(nrow(prueba)))
-  prueba <- as.data.frame(prueba)
-  
-  # Inicializar vectores para almacenar los resultados
-  accVector <- double()
-  sensVector <- double()
-  specVector <- double()
-  f1Vector <- double()
-  cfMatList <- list()
-  predicVector <- list()
-  
-  # Usar el modelo entrenado logistic_trn_mrmr$logisticModel$finalModel
-  best_decay <- logistic_trn_mrmr$logisticModel$finalModel$decay
-  
-  # Realizar predicciones en los datos de prueba usando el modelo entrenado
-  logistic_model <- glm(etiquetasTren~., data=subset(tren, select = c(colnames(tren)[1])), decay = best_decay, family="binomial")
-  predicciones <- predict(logistic_model, subset(prueba, select = c(colnames(prueba)[1])), type = "class")
-  predictScores <- predict(logistic_model,subset(prueba, select = c(colnames(prueba)[1])), type = "prob")
-  
-  # Calcular la matriz de confusión y las métricas
-  cfMat <- confusionMatrix(predicciones, etiquetasPrueba)
-  sens <- mean(cfMat$byClass[, "Sensitivity"])
-  spec <- mean(cfMat$byClass[, "Specificity"])
-  cfMat$byClass[, "F1"][is.na(cfMat$byClass[, "F1"])] <- 0
-  f1 <- mean(cfMat$byClass[, "F1"])
-  
-  # Guardar los resultados para este conjunto de características
-  cfMatList[[1]] <- cfMat
-  accVector[1] <- cfMat$overall["Accuracy"]
-  sensVector[1] <- sens
-  specVector[1] <- spec
-  f1Vector[1] <- f1
-  predicVector[[1]] <- predictScores
-  
-  # Si hay más variables, repetimos el proceso con más características
-  if (dim(prueba)[2] > 1) {
-    for (i in 2:dim(prueba)[2]) {
-      cat(paste("Probando con", i, "variables...\n", sep = " "))
-      
-      logistic_model2 <- glm(etiquetasTren~., data=tren[,1:i], decay = best_decay, family="binomial")
-      predicciones <- predict(logistic_model2, prueba[, 1:i], type = "class")
-      predictScores <- predict(logistic_model2, prueba[, 1:i], type = "prob")
-      
-      cfMat <- confusionMatrix(predicciones, etiquetasPrueba)
-      sens <- mean(cfMat$byClass[, "Sensitivity"])
-      spec <- mean(cfMat$byClass[, "Specificity"])
-      cfMat$byClass[, "F1"][is.na(cfMat$byClass[, "F1"])] <- 0
-      f1 <- mean(cfMat$byClass[, "F1"])
-      
-      cfMatList[[i]] <- cfMat
-      accVector[i] <- cfMat$overall["Accuracy"]
-      sensVector[i] <- sens
-      specVector[i] <- spec
-      f1Vector[i] <- f1
-      predicVector[[i]] <- predictScores
-    }
-  }
-  
-  cat("¡Clasificación realizada con éxito!\n")
-  
-  # Asignar nombres a los resultados
-  names(accVector) <- vars_selected
-  names(sensVector) <- vars_selected
-  names(specVector) <- vars_selected
-  names(f1Vector) <- vars_selected
-  
-  # Devolver los resultados como una lista
-  resultados <- list(cfMatList, accVector, sensVector, specVector, f1Vector, predicVector)
-  names(resultados) <- c("cfMats", "accVector", "sensVector", "specVector", "f1Vector", "predicciones")
-  
-  invisible(resultados)
-}
-```
-
-En estas funciones también se ha considerado que, si no es posible calcular el F1 para alguna clase e iteración debido a que no se predice ni correctamente ni erróneamente esa clase, el valor de dicho F1 será cero, lo que permite calcular adecuadamente la media de los tres F1 y tener en cuenta los F1 de las demás clases.
-
-En esta sección, usaremos estas funciones específicas para entrenar y evaluar los modelos de regresión logística en este problema de clasificación multiclase.
-
-### 3.4.1. Selección de variables con FSRankingMRMR
-
-Utilizamos las funciones implementadas para entrenar los modelos `logistic_trn_mrmr` y `logistic_test_mrmr`, y calcular las métricas.
-
-```{r, results='hide'}
-# Aplicar la función con regresión logística
-logistic_trn_mrmr <- logistic_trn2(MLMatrix, MLLabels, vars_selected = names(FSRankingMRMR[1:10]), numFold = 5)
-logistic_results_mrmr <- rbind(logistic_trn_mrmr$F1Info$meanF1[1:10],logistic_trn_mrmr$accuracyInfo$meanAccuracy)
-#dataPlot(svm_results_mrmr, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
-```
-
-
-```{r,  results='hide'}
-# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
-logistic_test_mrmr <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, names(FSRankingMRMR[1:10]), logistic_trn_mrmr)
-
-#################################################################################3
-logistic_results_mrmr_test <- rbind(logistic_trn_mrmr$F1Info$meanF1[1:10], logistic_test_mrmr$f1Vector, logistic_trn_mrmr$accuracyInfo$meanAccuracy, logistic_test_mrmr$accVector)
-```
-
-
-```{r, echo=F}
-#dataPlot(logistic_results_mrmr_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
-```
-
-```{r,echo=FALSE}
-#png('f13.png',width = 800, height = 600)
-num_genes <- 1:10
-Trn_F1 <- logistic_results_mrmr_test[1,1:10]
-Test_F1 <- logistic_results_mrmr_test[2,1:10]
-Trn_Acc <- logistic_results_mrmr_test[3,1:10]
-Test_Acc <- logistic_results_mrmr_test[4,1:10]
-plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
-lines(num_genes, Trn_Acc,"l")
-lines(num_genes, Test_F1,"l",col = "green",lty = 2)
-lines(num_genes, Test_Acc,"l",lty = 2)
-legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
-```
-
-En este caso, para num_genes = 3 las métricas comienzan a mejorar, tanto en train como en test, aunque sin un porcentaje muy alto y siendo similares en train y test. Se comprueba con la matriz de confusión para el conjunto test y una huella de 3 genes:
-
-```{r, echo=F}
-#png('m13.png', width=500, height = 400)
-dataPlot(logistic_test_mrmr$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
-```
-Esta es la mejor predicción hasta el momento. Es interesante destacar que la clase que más se confunde es el glioma mixto con el oligodendroglioma. Esto puede deberse a que el glioma mixto presenta características del oligodendroglioma, lo que hace más difícil diferenciarlas en el modelo. Dado que ambas clases comparten ciertas similitudes en su perfil genético o características de imagen, la confusión es comprensible, lo que resalta la importancia de seguir perfeccionando los métodos de clasificación para mejorar la precisión.
-
-### 3.4.2. Selección de variables con FSRankingRF
-
-Ajustamos ahora los modelos de test y train para las variables seleccionadas por Random Forest:
-
-```{r,  results='hide'}
-# Aplicar la función con regresión logística
-logistic_trn_rf <- logistic_trn2(MLMatrix, MLLabels, vars_selected = (FSRankingRF[1:10]), numFold = 5)
-logistic_results_rf <- rbind(logistic_trn_rf$F1Info$meanF1[1:10],logistic_trn_rf$accuracyInfo$meanAccuracy)
-#dataPlot(svm_results_rf, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
-```
-
-
-```{r, results='hide'}
-# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
-logistic_test_rf <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, (FSRankingRF[1:10]), logistic_trn_rf)
-
-#################################################################################3
-logistic_results_rf_test <- rbind(logistic_trn_rf$F1Info$meanF1[1:10], logistic_test_rf$f1Vector, logistic_trn_rf$accuracyInfo$meanAccuracy, logistic_test_rf$accVector)
-```
-
-```{r, echo=F}
-#dataPlot(svm_results_rf_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
-```
-
-
-```{r,echo=FALSE}
-#png('f14.png',width = 800, height = 600)
-num_genes <- 1:10
-Trn_F1 <- logistic_results_rf_test[1,1:10]
-Test_F1 <- logistic_results_rf_test[2,1:10]
-Trn_Acc <- logistic_results_rf_test[3,1:10]
-Test_Acc <- logistic_results_rf_test[4,1:10]
-plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
-lines(num_genes, Trn_Acc,"l")
-lines(num_genes, Test_F1,"l",col = "green",lty = 2)
-lines(num_genes, Test_Acc,"l",lty = 2)
-legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
-```
-
-Por un lado, a partir de 3 genes el F1 score y el accuracy se mantienen bastante constantes. Sin embargo, el porcentaje de acierto a partir de ese valor de genes no llega al 65% y, además, el F1 posteriormente deciende de forma leve. veamos así, la matriz de confusión para el conjunto test y una huella de 3 genes:
-
-```{r, echo=F}
-#png('m14.png', width=500, height = 400)
-dataPlot(logistic_test_rf$cfMats[[3]]$table, MLLabels, mode = "confusionMatrix")
-```
-
-En contraste con el caso anterior, donde la mayor confusión se da entre el glioma mixto y el oligodendroglioma, en este caso, los que más se confunden son el glioma mixto y el astrocitoma. Esto puede ocurrir debido a que ambas clases presentan características similares, lo que dificulta que el modelo las distinga con precisión de nuevo.
-
-### 3.4.3. Selección de variables con FSRankingDA
-
-Se estudia en esta sección la clasificación para el ranking creado con DA.
-
-```{r,  results='hide'}
-# Evaluar biomarcadores en TRN. Es multiclase, mejor ver accuracy y F1-Score
-logistic_trn_da<- logistic_trn2(MLMatrix, MLLabels, vars_selected = names(FSRankingDA[1:10]))
-```
-
-```{r}
-logistic_results_da <- rbind(logistic_trn_da$F1Info$meanF1[1:10],logistic_trn_da$accuracyInfo$meanAccuracy)
-#dataPlot(svm_results_da, MLLabels, legend = c("F1","Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
-```
-
-```{r, results='hide'}
-# Evaluar huella genética en TEST. Es multiclase, mejor ver accuracy y F1-Score
-logistic_test_da <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = names(FSRankingDA[1:10]), logistic_trn_da)
-logistic_results_da_test <- rbind(logistic_trn_da$F1Info$meanF1[1:10], logistic_test_da$f1Vector, logistic_trn_da$accuracyInfo$meanAccuracy, logistic_test_da$accVector)
-```
-
-```{r, echo=F}
-#dataPlot(svm_results_da_test, MLLabels, legend = c("Trn F1-score","Test F1-score", "Trn Accuracy","Test Accuracy"), mode = "classResults", xlab="Genes", ylab="Prediction Score")
-```
-
-```{r,echo=FALSE}
-#png('f15.png',width = 800, height = 600)
-num_genes <- 1:10
-Trn_F1 <- logistic_results_da_test[1,1:10]
-Test_F1 <- logistic_results_da_test[2,1:10]
-Trn_Acc <- logistic_results_da_test[3,1:10]
-Test_Acc <- logistic_results_da_test[4,1:10]
-plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
-lines(num_genes, Trn_Acc,"l")
-lines(num_genes, Test_F1,"l",col = "green",lty = 2)
-lines(num_genes, Test_Acc,"l",lty = 2)
-legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
-```
-
-A partir de 5 genes, parece que las métricas de train y test dejan de tener altibajos. Destaca que estas métricas son más bajas que los resultados obtenidos con los rankings mRMR y RF. Veamos la matriz de confusión para el conjunto test para facilitar la obtención de conclusiones:
-
-```{r, echo=F}
-#png('m15.png', width=500, height = 400)
-dataPlot(logistic_test_da$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
-```
-
-La bajada de precisión y de F1 score es debido a la gran confusión del glioma mixto con el oligodendroglioma.
-
-### 3.4.3. Selección de variables con FSRanking_MB
-
-Por último, repitamos el estudio para el ranking de Markov Blanket, entrenando los modelos `logistic_trn_mb` y `logistic_test_mb.` 
-
-```{r, eval=F}
-logistic_trn_mb <- logistic_trn2(MLMatrix, MLLabels, vars_selected = FSRanking_MB[1:10])
-save(logistic_trn_mb, file='logistic_trn_mb')
-```
-```{r}
-load('logistic_trn_mb')
-```
-
-```{r}
-logistic_results_mb <- rbind(logistic_trn_mb$F1Info$meanF1[1:10],logistic_trn_mb$accuracyInfo$meanAccuracy)
-logistic_test_mb <- logistic_test_multiclase(MLMatrix, MLLabels, t(XTest), YTest, vars_selected = (FSRanking_MB[1:10]), logistic_trn_mb)
-logistic_results_mb_test <- rbind(logistic_trn_mb$F1Info$meanF1[1:10], logistic_test_mb$f1Vector, logistic_trn_mb$accuracyInfo$meanAccuracy, logistic_test_mb$accVector)
-```
-
-```{r,echo=FALSE}
-#png('f16.png',width = 800, height = 600)
-num_genes <- 1:10
-Trn_F1 <- logistic_results_mb_test[1,1:10]
-Test_F1 <- logistic_results_mb_test[2,1:10]
-Trn_Acc <- logistic_results_mb_test[3,1:10]
-Test_Acc <- logistic_results_mb_test[4,1:10]
-plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
-lines(num_genes, Trn_Acc,"l")
-lines(num_genes, Test_F1,"l",col = "green",lty = 2)
-lines(num_genes, Test_Acc,"l",lty = 2)
-legend("topleft",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
-```
-De nuevo, parece adecuado escoger una huella de 5 genes ya que seha btenido una gráfica muy silimar a la anterior, pero no igual. Por ello, calculemos la matriz de confusión para el conjunto test y esta huella para visulizar los resultados con más detalle:
-
-```{r, echo=F}
-#png('m16.png', width=500, height = 400)
-dataPlot(logistic_test_mb$cfMats[[5]]$table, MLLabels, mode = "confusionMatrix")
-```
-
-Es cuarioso ya que es una de la mejores clasificaciones de la clase glioma mixto. Sin emebargo, se confunde en bastantes ocasiones el glioma mixto y el astrocitoma con el oligodendroglioma.
-
-### 3.4.5. Conclusiones 
-
-En el caso del clasificador SVM, si seleccionamos características DA o con MB, se tiene un accuracy muy poco superior al 50%. Sin embargo, para el algoritmo de selección mRMR, el accuracy es del 67.3% con muy pocos genes, tres concretamente, y además, este es el porcentaje de acierto el más alto obtenido. También, con el seleccionador Random Forest se obtiene un accuracy para el conjunto test del 63.5%, devolviendo por tanto, una clasificación adecuada pero más pobre que para el mRMR. Por tanto, elegiremos en este caso como mejor seleccionador y huella el mRMR con 3 genes.
 
 # 4.  Resultados bajo el algoritmo de selección y clasificador escogidos en 5CV
 
@@ -1803,118 +1312,83 @@ En primer lugar, el algoritmo de selección de variables elegido es el **mRMR** 
 
 ```{r, echo=F}
 #png('h.png', width = 800, height = 600)
-dataPlot(logistic_trn_mrmr, MLLabels, mode='heatmapResults')
+dataPlot(knn_trn_mrmr, MLLabels, mode='heatmapResults') 
 ```
 
 
 En segundo lugar, se presenta el siguiente código con el objetivo de mostar resultado, para el modelo de regresión logística con una penalización de $decay = 10^{-4}$ (la objetenida con el modelo `logistic_trn_mrmr` en la sección anterior) y utilizando el seleccionador de características mRMR, en 5CV Trn-Test para todo el dataset:
 
-```{r, results='hide'}
-set.seed(19)
 
-nfolds <- 5  # Número de particiones en la validación cruzada
-foldIDx <- cvGenStratified(MLLabels, nfolds)  # Particiones estratificadas
+```{r}
+nVarsMAX=10
 
-nVarsMAX <- 20  # Número máximo de genes a seleccionar, en un ejercicio de clase se aumentó hasta 50
+set.seed(15) 
+nfolds <- 5 
+foldIDx <- cvGenStratified(LABELS,nfolds)
 
-# Matrices para almacenar métricas por partición
-ACCTrnRL <- matrix(0, nfolds, nVarsMAX)
-ACCTestRL <- matrix(0, nfolds, nVarsMAX)
+ranking_list = matrix(0,nfolds,nVarsMAX) #Para acumular los distintos rankings
 
+#Para recoger los datos de accuracy y F-Score tanto en train como en test:
+ACC_Train <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+ACC_Test  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+F1_Train <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
+F1_Test  <- matrix(0,nrow=nfolds,ncol=nVarsMAX)
 
-# Para almacenar los ranking de características de cada partición
-rankingSMRMR <- matrix(0, nfolds, nVarsMAX) 
+#Ralizamos la extracción de genes diferencialmente expresados sobre el conjunto total de datos:
+DEGsInfo <- DEGsExtraction(MATRIZ, LABELS, lfc = 0.2, pvalue = 0.001, cov = 1)
+DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
+MLMatrix <- t(DEGsMatrix)
+MLLabels <- LABELS
 
-# El Mejor hiperparámetro decay obtenido en la sección enterior
-best_decay<-logistic_trn_mrmr$logisticModel$finalModel$decay 
-print(best_decay)
-
-# Bucle para 5 particiones
-for (particion in seq(1, nfolds)) {
-  # Crear particiones de entrenamiento y prueba
-  datosParaTRN <- which(foldIDx != particion)  # Índices de entrenamiento
-  segmentoTest <- which(foldIDx == particion)  # Índices de prueba
-  
-  XTrn_P <- as.data.frame( MLMatrix[datosParaTRN, ] ) # Datos de entrenamiento
-  XTest_P <- as.data.frame(MLMatrix[segmentoTest, ])  # Datos de prueba
-  
-  YTrn_P <- as.factor(MLLabels[datosParaTRN])  # Etiquetas de entrenamiento
-  YTest_P <- as.factor(MLLabels[segmentoTest])  # Etiquetas de prueba
-  
-  # Ranking con mRMR
-  rankingMRMR <-featureSelection(XTrn_P, YTrn_P, mode = "mrmr", vars_selected = colnames(XTrn_P))
-  
-  # Guardar POR FILAS el ranking de características para esta partición 
-  rankingSMRMR[particion, ] <- rankingMRMR[1:nVarsMAX]
-
-  
-  # Evaluación por número de genes seleccionados
-  for (numGenes in seq_len(nVarsMAX)) {
-    # Seleccionar las mejores variables
-    topGenes <- colnames(XTrn_P)[rankingMRMR[1:numGenes]]
+for(particion in seq(1:nfolds)){ # para ejecuciones CV
+    indexTest <- which(foldIDx == particion)
+    indexTrn  <- which(foldIDx != particion)
     
-    # Entrenar modelo Regresión Logística multinomial
-    modelo <- multinom(YTrn_P ~ ., data = subset(XTrn_P, select=topGenes), decay = best_decay)
+    XTrn <- MATRIZ[,indexTrn]
+    YTrn <- LABELS[indexTrn]
+    XTest <- MATRIZ[,indexTest]
+    YTest <- LABELS[indexTest]
     
-    # Predicciones en Train
-    predTrain <- predict(modelo, subset(XTest_P, select=topGenes))
-    confMatTrain <- confusionMatrix(as.factor(predTrain), as.factor(YTest_P))
-    ACCTrnRL[particion, numGenes] <- confMatTrain$overall["Accuracy"]
+    ranking <- featureSelection(MLMatrix[indexTrn,], MLLabels[indexTrn], mode = "mrmr", vars_selected = colnames(MLMatrix), maxGenes=nVarsMAX)
+    #print(ranking)
+    ranking_list[particion,] = ranking[1:nVarsMAX]
+
+    model_trn <- knn_trn(t(XTrn), YTrn, vars_selected = names(FSRankingMRMR[1:10])) 
+    model_test <- knn_test(t(XTrn), YTrn, t(XTest), YTest, vars_selected = names(FSRankingMRMR[1:10]), bestK=model_trn$bestK)
     
-    # Predicciones en Test
-    predTest <- predict(modelo, subset(t(XTest), select=topGenes))
-    confMatTest <- confusionMatrix(as.factor(predTest), as.factor(YTest)) 
-    ACCTestRL[particion, numGenes] <- confMatTest$overall["Accuracy"] # se van añadiendo los valores por filas. Por tanto, para calcular la media de los accuracy para un número determinado de genes que hacerlo por columnas.  #print(confMatTest$overall[1])
-    #print(confMatTest$table)
-  }
-  
-  # Graficar los resultados para la partición actual
-  num_genes <- 1:nVarsMAX
-  Trn_Acc <- ACCTrnRL[particion, 1:nVarsMAX]
-  Test_Acc <- ACCTestRL[particion, 1:nVarsMAX]
-  
-  plot(num_genes, Trn_Acc, type = "l", col = "green", ylim = c(0.5, 1), ylab = "Accuracy",        xlab = "Número de genes seleccionados", main = paste("Partición", particion, "- RL con mRMR"))
-  lines(num_genes, Test_Acc, col = "black")
-  axis(1, at = 1:20, labels = 1:20)  # Configura los ticks y etiquetas del eje X
-  grid()
-  legend("topleft", legend = c("Train Accuracy", "Test Accuracy"),col=c("green","black"),lty = c(1, 1))
+    ACC_Train[particion,] <- model_trn$accuracyInfo$meanAccuracy
+    ACC_Test[particion,]  <- model_test$accVector
+    
+    F1_Train[particion,] <- model_trn$F1Info$meanF1
+    F1_Test[particion,]  <- model_test$f1Vector
 }
+```
+```{r}
+#Calculamos los valores medios de Accuracy y F1-Score para Train y Test:
+ACC_Train_Mean <- colMeans(ACC_Train)
+ACC_Test_Mean <- colMeans(ACC_Test)
+F1_Train_Mean <- colMeans(F1_Train)
+F1_Test_Mean <- colMeans(F1_Test)
 
-# Medias de Accuracy en las 5 particiones
-ACCTrnRL_Mean <- colMeans(ACCTrnRL)
-ACCTestRL_Mean <- colMeans(ACCTestRL)
-
-# Resultados promedio
-plot(1:nVarsMAX, ACCTrnRL_Mean, type = "l", col = "green", ylim = c(0.5, 1), xlim=c(1,20), xlab = "Número de genes seleccionados", ylab = "Accuracy", main = "Resultados Promedio RL con mRMR")
-lines(1:nVarsMAX, ACCTestRL_Mean, col = "black")
-axis(1, at = 1:20, labels = 1:20)  # Configura los ticks y etiquetas del eje X
+#Mostramos gáficamente los resultados:
+plot(1:nVarsMAX, ACC_Train_Mean[1:nVarsMAX], "l", col="black", ylim=c(0.0,1.0), ylab='Métricas')
+lines(1:nVarsMAX, ACC_Test_Mean[1:nVarsMAX],"l",lty=2, col="black")
 grid()
-legend("topleft", legend = c("Train Accuracy", "Test Accuracy"), col = c("green", "black"),
-       lty = c(1, 1))
+lines(1:nVarsMAX, F1_Train_Mean[1:nVarsMAX],"l",col="green")
+lines(1:nVarsMAX, F1_Test_Mean[1:nVarsMAX],"l", lty=2, col="green")
+title(main = "LR-RF con 5CV")
+legend("bottomright",c("F-Score Train", "F-Score Test", "Accuracy Train", "Accuracy Test"), col=c("green","green","black","black"),lty=c(1,2,1,2), cex=1)
 
-```
-
-
-```{r}
-ACCTrnRL_Mean
-```
-```{r}
-ACCTestRL_Mean
-```
-
-```{r}
-# Se observan la variable rankingSMRMR
-rankingSMRMR[,1:5]
-# rankingMRMR de la última iteración pero solo lo utilizamos para saber el nombre de los genes
-colnames(MLMatrix)[c(170, 81, 51, 41, 10)]
+#Mostramos los 5 rankings:
+print(ranking_list[,1:10])
 ```
 
 
 ```{r}
 # Se observan la variable rankingSMRMR
-rankingSMRMR[,1:10]
+ranking_list[,1:5]
 # rankingMRMR de la última iteración pero solo lo utilizamos para saber el nombre de los genes
-colnames(MLMatrix)[c(170, 81, 51, 41, 10)]
+colnames(MLMatrix)[c(226, 751, 621)]
 ```
 ## 4.1. Resultado de la huella final escogida y clasificador en 5 CV, matriz de confusión final del dataset.
 
@@ -1927,46 +1401,42 @@ nfolds <- 5  # Número de particiones en la validación cruzada
 foldIDx <- cvGenStratified(LABELS, nfolds)  # Particiones estratificadas
 
 # Vectores para almacenar métricas por partición
-ACCTrnRL <- numeric(nfolds)
-ACCTestRL <- numeric(nfolds)
+ACC_Test  <- numeric(nfolds)
+F1_Test  <- numeric(nfolds)
 
 # Matriz de confusión acumulada para el test
-accTestSum <- matrix(0, nrow = 3, ncol = 3)
+conf_matrix <- matrix(0, nrow = 2, ncol = 2)
 
 # Ranking con mRMR
-huella <- c("IGHV3-73", "IGHV6-1", "UBQLN4P1", "PI4K2B", "RAPH1")
+huella <- c("IGHV3-73", "SP140", "IGHV6-1")
+num_genes <- 3
 
 # Bucle para 5 particiones
 for (particion in seq_len(nfolds)) {
-  # Crear particiones de entrenamiento y prueba
-  datosParaTRN <- which(foldIDx != particion)  # Índices de entrenamiento
-  segmentoTest <- which(foldIDx == particion)  # Índices de prueba
+  indexTest <- which(foldIDx == particion)
+  indexTrn  <- which(foldIDx != particion)
   
-  XTrn_P <- as.data.frame(t(MATRIZ[,datosParaTRN])) # Datos de entrenamiento
-  XTest_P <- as.data.frame(t(MATRIZ[,segmentoTest]))  # Datos de prueba
-  
-  YTrn_P <- as.factor(LABELS[datosParaTRN])  # Etiquetas de entrenamiento
-  YTest_P <- as.factor(LABELS[segmentoTest])  # Etiquetas de prueba
-  
+  XTrn <- MATRIZ[,indexTrn]
+  YTrn <- LABELS[indexTrn]
+  XTest <- MATRIZ[,indexTest]
+  YTest <- LABELS[indexTest]
   
   # Entrenar modelo Regresión Logística multinomial
-  modelo <- multinom(YTrn_P ~ ., data = subset(XTrn_P, select=huella), decay = best_decay)
+  model_trn <- knn_trn(t(XTrn), YTrn, vars_selected = huella) 
+  model_test <- knn_test(t(XTrn), YTrn, t(XTest), YTest, vars_selected = huella, bestK=model_trn$bestK)
   
-  # Predicciones en Test
-  predTest <- predict(modelo, XTest_P[, huella])
-  confMatTest <- confusionMatrix(as.factor(predTest), YTest_P)
-  #print(confMatTest$table)
-  ACCTestRL[particion] <- confMatTest$overall["Accuracy"]
-
-  
-  # Sumar la matriz de confusión al total
-  accTestSum <- accTestSum + confMatTest$table
+  ACC_Test[particion]  <- model_test$accVector[num_genes]
+  F1_Test[particion]  <- model_test$f1Vector[num_genes]
+    
+  conf_matrix <- conf_matrix + model_test$cfMats[[num_genes]]$table
 }
 ```
 
 ```{r}
-print("Matriz de confusión acumulada en el test:")
-accTestSum
+mean(ACC_Test)
+mean(F1_Test)
+
+dataPlot(conf_matrix, mode = "confusionMatrix")
 ```
 
 ```{r}
@@ -1974,151 +1444,47 @@ table(LABELS)
 ```
 
 
-Finalmente, con estos cinco genes seleccionados, se harán dos particiones sobre MLMatrix y MLLabels, train (80%) y test (20%) con el objetivo de entrenar un modelo regresión logística y buscar los mejores parámetros para este problema con un GridSearch. Para concluir esta sección se predecirán las clases de conjuto test y evaluaremos el desempeño del modelo con una matriz de confusión:
+# Clasificación de las muestras de glioma mixto
 
 ```{r}
-# Filtrar los datos para incluir solo los genes seleccionados
-X_selected <- as.data.frame( MLMatrix[, c("IGHV3-73", "IGHV6-1", "UBQLN4P1", "PI4K2B", "RAPH1")])# Seleccionar columnas correspondientes
-Y <- as.factor(MLLabels)  # Etiquetas de clase
+require(CORElearn)
+set.seed(19)
+nfolds<- 5
+folds<-cvGenStratified(LABELS, nfolds)
 
-# Crear particiones: 80% Train, 20% Test
-set.seed(19)  
+# Vectores para almacenar métricas por partición
+ACC_Test  <- numeric(nfolds)
+F1_Test  <- numeric(nfolds)
 
-trainIndex <- createDataPartition(Y, p = 0.8, list = FALSE)
-X_train <- X_selected[trainIndex, ]
-Y_train <- Y[trainIndex]
-X_test <- X_selected[-trainIndex, ]
-Y_test <- Y[-trainIndex]
+# Matriz de confusión acumulada para el test
+conf_matrix <- matrix(0, nrow = 2, ncol = 2)
 
-# GridSearch para Regresión Logística Multinomial: Definir el parámetro decay a probar
-grid <- expand.grid(.decay = c(0.0001, 0.01, 0.1, 1))
+# Ranking con mRMR
+huella <- c("IGHV3-73", "SP140", "IGHV6-1")
+num_genes <- 3
 
-# Entrenar el modelo con validación cruzada
-train_control <- trainControl(method = "cv", number = 5)  # Validación cruzada de 5 pliegues
+nData<-dim(MATRIZ)[1]
+indexTest<-which(folds ==1) # para ejecuciones no CV
+indexTrn<-which(folds != 1) # para ejecuciones no CV
+XTrn<-MATRIZ[, indexTrn]
+XTest<-MATRIZ[,indexTest]
+YTrn<-LABELS[indexTrn]
+YTest<-LABELS[indexTest]
 
-# Modelo de Regresión Logística Multinomial
-logistic_model <- train(x = X_train, y = Y_train, method = "multinom", trControl = train_control, tuneGrid = grid)
+#Entrenamos el modelo sólo con los datos de entrenamiento. Podríamos hacerlo con el total de los datos.
+model_trn <- knn_trn(t(XTrn), YTrn, vars_selected = huella) 
+LABELS_AUX <- rep('oligodendroglioma', times=dim(MATRIZ_M)[2])
+LABELS_AUX[1] <- "astrocytoma" #Para que no de error
+model_test <- knn_test(t(XTrn), YTrn, t(MATRIZ_M), LABELS_AUX, vars_selected = huella, bestK=model_trn$bestK)
 
-# Mejores hiperparámetros encontrados
-best_params <- logistic_model$bestTune
-best_params
-
-# Entrenar el modelo con el mejor parámetro decay
-final_model <- multinom(Y_train ~ ., data = cbind(X_train, Y_train), decay = best_params$decay)
-
-# Predicciones en el conjunto de prueba
-pred_test <- predict(final_model, X_test)
-conf_matrix <- confusionMatrix(pred_test, Y_test)
-conf_matrix
-```
-
-En conclusión, el mejor valor de `deacy` es 0.0001, lo que ha permitido obtener una precisión del 65.43% en el conjunto de prueba. Este rendimiento, aunque no es extremadamente alto, aunque refleja un desempeño razonable al clasificar las tres clases. En cuanto a los estadísticos por clase, la sensibilidad es particularmente alta en astrocytoma con un 93.33%, lo que indica que el modelo es eficaz para identificar correctamente los positivos en esta clase, al igual que para la clase oligodendroglioma con un 80% de acierto. Por ello, el Balanced Accuracy, que considera tanto la sensibilidad como la especificidad, muestra buenos valores, especialmente en astrocytoma (83.92%) y oligodendroglioma (77.25%). Sin embargo, el valor predictivo positivo es algo bajo en mixed_glioma (33.33%), pero aún se mantiene a un buen nivel en astrocytoma (68.29%) y oligodendroglioma (64.86%). Así, es importante destacar que mixed_glioma presenta un desafío, con una sensibilidad baja (4.76%) y un rendimiento general más débil, lo que se refleja en los errores de clasificación en la matriz de confusión.
-
-
-# 5. Enriquecimiento de los genes de la huella escogida
-
-Por último, en esta sección, se realizará un análisis de enriquecimiento funcional de los tres genes seleccionados en la huella final (**IGHV3-73**, **IGHV6-1**, **UBQLN4P1**, **PI4K2B** y **RAPH1**), identificando su participación en procesos biológicos (Gene Ontology - GO), rutas metabólicas y celulares (Pathways) y su asociación con enfermedades (Disease Association). Los resultados obtenidos permitirán no solo diferenciar con mayor precisión las muestras de LUAD, LUSC y tejido sano, sino también identificar potenciales biomarcadores que puedan contribuir a futuros estudios sobre el diagnóstico y tratamiento del cáncer de pulmón.
-
-Primero, se utiliza la función "*getGenesAnnotationpara*" mapear los nombres de los genes (**IGHV3-73**, **IGHV6-1**, **UBQLN4P1**, **PI4K2B** y **RAPH1**) a identificadores Entrez Gene. Estos identificadores son necesarios para muchos análisis funcionales, ya que son un estándar en bases de datos biológicos como GO, pathways y diseases que se verán a continuación.
-
-```{r, results='hide'}
-#ENRIQUECIMIENTO FUNCIONAL:
-entrezAnnotation <- getGenesAnnotation(c("IGHV3-73", "IGHV6-1", "UBQLN4P1", "PI4K2B", "RAPH1"), attributes = c("external_gene_name","entrezgene_id"), filter = "external_gene_name")
-entrezGeneIds<- entrezAnnotation$entrezgene_id[!is.na(entrezAnnotation$entrezgene_id)]
-```
-
-```{r}
-entrezAnnotation
-```
-
-Así, el gen **PI4K2B** y el **RAPH1** serán los únicos que no se ignore por tener identificador Entrez y ser los únicos que se mapean. Con estos genes pasemos al análisis de enriquecimiento funcional utilizando Gene Ontology:
-
-```{r, eval=F}
-# Se descarga informacion sobre los Gene Ontology
-GOs <- geneOntologyEnrichment_updated(as.character(entrezGeneIds), geneType = "ENTREZ_GENE_ID")
-save(GOs, file='GOs')
-```
-
-```{r}
-load('GOs')
-GOs
-```
-
-En la tabla anterior se han mostrado los términos GO asosiados al gen **PI4K2B** y al gen **RAPH1**, los cuales están asociado principalmente con procesos biológico (BP):
-
-- Asociados al **PI4K2B**: el proceso biosintético del fosfatidilinositol y del fosfatidilinositol fosfato, la organización de vesículas y la organización del Golgi.
-- Asociados al **RAPH1**: axogénesis (el proceso mediante el cual las neuronas se desarrollan y extienden sus axones ), crecimiento del desarrollo involucrado en la morfogénesis y extensión de las proyecciones neuronales.
-
-El gen gen **PI4K2B** también se asocia con funciones moleculares (MF), como por ejemplo:
-
-- La actividad de la quinasa de fosfatidilinositol.
-- La actividad de la quinasa lipídica.
-
-Y, tanto **PI4K2B** como **RAPH1**, se asocian con componentes celulares (CC):
-
-- Asociados con **PI4K2B**: Red del Golgi-trans: la red de vesículas que clasifica y envía proteínas y lípidos a sus destinos, subcompartimento del aparato de Golgi. endosoma temprano, actividad de quinasa de fosfatidilinositol: actividad enzimática responsable de la fosforilación del fosfatidilinositol, un lípido involucrado en la transducción de señales.
-- Asociados con **RAPH1**: borde principal celular, lamelipodio y filopodio.
-
-
-Por otro lado, veamos los genes más enriquecidos observando la variable de GOs: **GeneRatio**. Sin embargo, esta variable vale en todos los casos 1/2 luego no podemos llegar a ninguna conclusión, a priori.
-
-Otra posibilidad es crear un vector con los p-values ajustados ordenados de menor a mayor. Cuanto menor sea el **p.ajust**, más significativo será el término GO. Se muestran, entonces, los cinco términos más enriquecidos:
-
-```{r}
-sort(GOs$p.adjust, decreasing = F)[1:5]
-posiciones<-order(GOs$p.adjust, decreasing = F)[1:5]
-posiciones
-rownames(GOs)[posiciones][1:5]
-GOs$Description[posiciones]
-GOs$geneID[posiciones]
-```
-La mayoría de los genes enriquecidos están asocidos al **PI4K2B**.
-
-En segundo lugar, veamos la función de enriquecimiento funcional: `DEGsToPathways`, la cual descarga información sobre los Pathways, es decir, rutas metabólicas y celulares:
-
-```{r, results='hide'}
-pathways <- DEGsToPathways(entrezAnnotation$external_gene_name)
-pathways_df <- data.frame(
-  Kegg_path = unlist(pathways$KEGG_Path),
-  Name = unlist(pathways$Name),
-  Description = unlist(pathways$Description),
-  Class = unlist(pathways$Class),
-  Genes = unlist(pathways$Genes)
-)
+#Accuracy y F-Score nos dan igual, solo queremos ver cómo ha clasificado las muestras
+conf_matrix <- model_test$cfMats[[num_genes]]$table
 ```
 ```{r}
-pathways_df
+dataPlot(conf_matrix, mode = "confusionMatrix")
 ```
 
-En este caso, el gen **PI4K2B** está presente en las tres rutas metabólicas, es decir, en los tres pathways. Veamos a que clase pertece cada ruta metabólica:
-
-- map00562 pertenece al metabolismo de los carbohidrados.
-- map01100 está listado, pero no tiene una descripción específica asociada, por lo que no podemos determinar su categoría.
-- map04070 pertenece a la categoría de Procesamiento de Información Ambiental; Transducción de Señales, que abarca cómo las células perciben y responden a señales provenientes del entorno, como estímulos químicos o físicos. 
 
 
-La tercera y última forma de enriquecimiento funcional que se tarta en este proyecto, viene dada por la función `DEGsToDiseases`. Con ella se descarga información sobre las enfermedades relacionadas y busca las evidencias de que esos genes esten asociados a esas enfermedades.
 
-```{r, results='hide'}
-diseases <- DEGsToDiseases(entrezAnnotation$external_gene_name, getEvidences = TRUE)
-```
-- *entrezAnnotation$external_gene_name*: se pasan los nombres de los genes de interés, en nuestro caso la huella escogida.
-- *getEvidences = TRUE*: al activar este parámetro, la función recupera las enfermedades asociadas con esos genes y obtiene las evidencias científicas que respaldan dichas asociaciones, como estudios previos, artículos de investigación y bases de datos.
-
-```{r}
-diseases
-```
-
-La información proporcionada se refiere a nuestros genes con identificadores Entrez: **PI4K2B** y **RAPH1**, junto con las **enfermedades** asociadas a ellos y los respectivos **puntajes de asociación**. Aunque en el segundo caso aparezca NA, tras varias comprobaciones he descubierto que se refiere al gen **RAPH1**.
-
-En primer lugar, el gen **PI4K2B** está asociado con diversas condiciones, aunque los puntajes de asociación son relativamente bajos. Las enfermedades con mayores *Overall Score*, es decir, más relacionadas con el gen, son: **adenocarcinoma de mama**, **medición de proteínas** y **carcinoma escamoso de cabeza y cuello**. En cuanto a la **medición de proteínas**, la asociación genética muestra un puntaje de 0.391, lo que indica cierta relación genética entre **PI4K2B** y esta condición. Sin embargo, para muchas otras enfermedades, no se observan asociaciones significativas, ya que los puntajes de Genetic Assoc. son todos "0". Destaca también, el caso del **autismo**, que presenta un puntaje de 0.1945 en asociación genética, lo que sugiere una relación con el gen **PI4K2B**, aunque es débil. En relación con la evidencia en literatura, el único valor relevante se encuentra en el **carcinoma pulmonar de células pequeñas**, con un puntaje de 0.468 y el **adenocarcinoma de pulmón** con un puntuaje de 0.012. Esto indica que **PI4K2B** tiene una expresión moderada en este tipo de cáncer y evidencias disponibles en la literatura.
-
-Por otro lado, en la mayoría de las enfermedades y condiciones mencionadas (como **autismo**, **medición de proteínas sanguíneas**, o **microbioma intestinal**), tanto la expresión de ARN como las mutaciones somáticas, los fármacos conocidos y los modelos animales no muestran evidencia fuerte, ya que todos los valores están en "0".
-
-
-En segundo lugar, el gen **RAPH1** parece que tiene más asociación con las enfermedades neurodegenerativas (*Ovarall Score* = 0.53), así como con la **medición de la microestructura de la sustancia blanca**, es decir, con el análisis detallado de las fibras nerviosas; y la **medición de la apolipoproteína B** lo que implica evaluar los niveles de una proteína vinculada al transporte de lípidos, cuya alteración puede estar asociada con enfermedades cardiovasculares y neurodegenerativas. Además, estas dos últimas enfermedades son las que presentan valores más altos en *asociación genética*. Sin embargo, en relación con la literatura, expresión de ARN, fármacos conocidos o modelos animales no se proporciona ninguna información.
-
-En cuanto a mutaciones somáticas para el gen **RAPH1**, se observa que la mayoría de las enfermedades listadas no tienen mutaciones somáticas registradas, ya que los valores en esta columna son "0" para muchas de ellas. Sin embargo, hay dos excepciones: el **carcinoma de próstata** y el **cáncer de próstata familiar**, que tienen un valor de 0.1824, indicando una presencia mínima de mutaciones somáticas asociadas con este gen. Esto sugiere que, aunque la mutación somática no es un factor dominante en la mayoría de los casos, podría tener alguna relevancia en ciertos tipos de cáncer, como los relacionados con la próstata.
-
-Finalmente, los valores de *Affected Pathways* son más altos en ciertas condiciones, como en el **adenocarcinoma de mama**, en el caso del **PI4K2B**, donde la vía afectada muestra un valor de 0.8086, indicando este gen podría estar involucrado en la regulación de ciertas vías metabólicas o celulares relevantes para este tipo de cáncer. Además, para el **RAPH1** solo hay un valor para el *Affected Pathways* y es de 0.862 lo que indica que este gen podría estar involucrado en la regulación de vías metabólicas o celulares específicas que desempeñan un papel importante en los procesos asociados a las **enfermedades neurodegenerativas**.
 
