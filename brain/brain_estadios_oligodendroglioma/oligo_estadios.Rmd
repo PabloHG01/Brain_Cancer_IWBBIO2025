@@ -1361,7 +1361,7 @@ ACCTestRL <- numeric(nfolds)
 accTestSum <- matrix(0, nrow = 2, ncol = 2)
 
 # Ranking con mRMR
-huella <- c("CENPA"  , "EPHA7"  , "ZNF385D", "ASPG"  ,  "HLA-V"  , "MAL")
+huella <- c("CENPA", "EPHA7", "ZNF385D", "ASPG", "HLA-V", "MAL")
 
 # Bucle para 5 particiones
 for (particion in seq_len(nfolds)) {
@@ -1405,7 +1405,7 @@ table(LABELS)
 
 Finalmente, con estos cinco genes seleccionados, se harán dos particiones sobre MLMatrix y MLLabels, train (80%) y test (20%) con el objetivo de entrenar un modelo regresión logística y buscar los mejores parámetros para este problema con un GridSearch. Para concluir esta sección se predecirán las clases de conjuto test y evaluaremos el desempeño del modelo con una matriz de confusión:
 
-```{r}
+```{r, eval=F}
 # Filtrar los datos para incluir solo los genes seleccionados
 X_selected <- as.data.frame( MLMatrix[, c("IGHV3-73", "IGHV6-1", "UBQLN4P1", "PI4K2B", "RAPH1")])# Seleccionar columnas correspondientes
 Y <- as.factor(MLLabels)  # Etiquetas de clase
@@ -1441,4 +1441,77 @@ conf_matrix <- confusionMatrix(pred_test, Y_test)
 conf_matrix
 ```
 
-En conclusión, el mejor valor de `deacy` es 0.0001, lo que ha permitido obtener una precisión del 65.43% en el conjunto de prueba. Este rendimiento, aunque no es extremadamente alto, aunque refleja un desempeño razonable al clasificar las tres clases. En cuanto a los estadísticos por clase, la sensibilidad es particularmente alta en astrocytoma con un 93.33%, lo que indica que el modelo es eficaz para identificar correctamente los positivos en esta clase, al igual que para la clase oligodendroglioma con un 80% de acierto. Por ello, el Balanced Accuracy, que considera tanto la sensibilidad como la especificidad, muestra buenos valores, especialmente en astrocytoma (83.92%) y oligodendroglioma (77.25%). Sin embargo, el valor predictivo positivo es algo bajo en mixed_glioma (33.33%), pero aún se mantiene a un buen nivel en astrocytoma (68.29%) y oligodendroglioma (64.86%). Así, es importante destacar que mixed_glioma presenta un desafío, con una sensibilidad baja (4.76%) y un rendimiento general más débil, lo que se refleja en los errores de clasificación en la matriz de confusión.
+# 5. Enriquecimiento de los genes de la huella escogida
+
+```{r, results='hide'}
+#ENRIQUECIMIENTO FUNCIONAL:
+entrezAnnotation <- getGenesAnnotation(c("CENPA", "EPHA7", "ZNF385D", "ASPG", "HLA-V", "MAL"), attributes = c("external_gene_name","entrezgene_id"), filter = "external_gene_name")
+entrezGeneIds<- entrezAnnotation$entrezgene_id[!is.na(entrezAnnotation$entrezgene_id)]
+```
+
+```{r}
+entrezAnnotation
+```
+
+Así, el gen **PI4K2B** y el **RAPH1** serán los únicos que no se ignore por tener identificador Entrez y ser los únicos que se mapean. Con estos genes pasemos al análisis de enriquecimiento funcional utilizando Gene Ontology:
+
+```{r, eval=F}
+# Se descarga informacion sobre los Gene Ontology
+GOs <- geneOntologyEnrichment_updated(as.character(entrezGeneIds), geneType = "ENTREZ_GENE_ID")
+save(GOs, file='GOs')
+```
+
+```{r}
+load('GOs')
+GOs
+```
+
+
+Por otro lado, veamos los genes más enriquecidos observando la variable de GOs: **GeneRatio**. Sin embargo, esta variable vale en todos los casos 1/2 luego no podemos llegar a ninguna conclusión, a priori.
+
+Otra posibilidad es crear un vector con los p-values ajustados ordenados de menor a mayor. Cuanto menor sea el **p.ajust**, más significativo será el término GO. Se muestran, entonces, los cinco términos más enriquecidos:
+
+```{r}
+sort(GOs$p.adjust, decreasing = F)[1:5]
+posiciones<-order(GOs$p.adjust, decreasing = F)[1:5]
+posiciones
+rownames(GOs)[posiciones][1:5]
+GOs$Description[posiciones]
+GOs$geneID[posiciones]
+```
+La mayoría de los genes enriquecidos están asocidos al **PI4K2B**.
+
+En segundo lugar, veamos la función de enriquecimiento funcional: `DEGsToPathways`, la cual descarga información sobre los Pathways, es decir, rutas metabólicas y celulares:
+
+```{r, results='hide'}
+pathways <- DEGsToPathways(entrezAnnotation$external_gene_name)
+pathways_df <- data.frame(
+  Kegg_path = unlist(pathways$KEGG_Path),
+  Name = unlist(pathways$Name),
+  Description = unlist(pathways$Description),
+  Class = unlist(pathways$Class),
+  Genes = unlist(pathways$Genes)
+)
+```
+```{r}
+pathways_df
+```
+
+En este caso, el gen **PI4K2B** está presente en las tres rutas metabólicas, es decir, en los tres pathways. Veamos a que clase pertece cada ruta metabólica:
+
+- map00562 pertenece al metabolismo de los carbohidrados.
+- map01100 está listado, pero no tiene una descripción específica asociada, por lo que no podemos determinar su categoría.
+- map04070 pertenece a la categoría de Procesamiento de Información Ambiental; Transducción de Señales, que abarca cómo las células perciben y responden a señales provenientes del entorno, como estímulos químicos o físicos. 
+
+
+La tercera y última forma de enriquecimiento funcional que se tarta en este proyecto, viene dada por la función `DEGsToDiseases`. Con ella se descarga información sobre las enfermedades relacionadas y busca las evidencias de que esos genes esten asociados a esas enfermedades.
+
+```{r, results='hide'}
+diseases <- DEGsToDiseases(entrezAnnotation$external_gene_name, getEvidences = TRUE)
+```
+- *entrezAnnotation$external_gene_name*: se pasan los nombres de los genes de interés, en nuestro caso la huella escogida.
+- *getEvidences = TRUE*: al activar este parámetro, la función recupera las enfermedades asociadas con esos genes y obtiene las evidencias científicas que respaldan dichas asociaciones, como estudios previos, artículos de investigación y bases de datos.
+
+```{r}
+diseases
+```

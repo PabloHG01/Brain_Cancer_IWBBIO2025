@@ -1955,6 +1955,7 @@ rankingSMRMR[,1:10]
 # rankingMRMR de la última iteración pero solo lo utilizamos para saber el nombre de los genes
 colnames(MLMatrix)[c(170, 81, 51, 41, 10)]
 ```
+
 ## 4.1. Resultado de la huella final escogida y clasificador en 5 CV, matriz de confusión final del dataset.
 
 Podemos comenzar esta sección calculando la matriz final del modelo conocida la huella volviendo a probar en 5CV con el número de genes escogidos, es decir, *numGenes <- 5*:
