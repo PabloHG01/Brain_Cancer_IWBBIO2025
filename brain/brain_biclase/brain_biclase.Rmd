@@ -135,19 +135,21 @@ save(LABELS, file = 'LABELS')
 
 ```{r}
 load(file = 'MATRIZ')
+MATRIZ_ALL <- MATRIZ
 load(file = 'LABELS')
+LABELS_ALL <- LABELS
 
 #rownames(MATRIZ)<- make.names(rownames(MATRIZ))
 ```
 
 ```{r}
-table(LABELS)
+table(LABELS_ALL)
 ```
 
 
 ```{r}
-MATRIZ_M <- MATRIZ[, LABELS=="mixed_glioma"]
-MATRIZ <- MATRIZ[, !(LABELS=="mixed_glioma")]
+MATRIZ_M <- MATRIZ_ALL[, LABELS_ALL=="mixed_glioma"]
+MATRIZ <- MATRIZ_ALL[, !(LABELS_ALL=="mixed_glioma")]
 ```
 
 ```{r}
@@ -155,8 +157,8 @@ print(dim(MATRIZ))
 print(dim(MATRIZ_M))
 ```
 ```{r}
-LABELS_M <- LABELS[LABELS=="mixed_glioma"]
-LABELS <- LABELS[!(LABELS=="mixed_glioma")]
+LABELS_M <- LABELS_ALL[LABELS_ALL=="mixed_glioma"]
+LABELS <- LABELS_ALL[!(LABELS_ALL=="mixed_glioma")]
 ```
 
 ```{r}
@@ -196,7 +198,7 @@ YTest<-LABELS[indexTest]
 ```{r, eval=F, results='hide'}
 # Definir los valores de LFC y COV a probar
 LFC_values <- c(0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.75, 1) 
-COV_values <- c(1, 2)
+COV_values <- c(1)
 p_values <- c(0.001, 0.0005, 0.0001)
 
 
@@ -790,7 +792,7 @@ plot(num_genes, Trn_F1,"l", col = "green",ylim=c(0,1), ylab='Métricas')
 lines(num_genes, Trn_Acc,"l")
 lines(num_genes, Test_F1,"l",col = "green",lty = 2)
 lines(num_genes, Test_Acc,"l",lty = 2)
-legend("topright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
+legend("bottomright",c("Trn F1-score", "Test F1-score", "Trn Accuracy", "Test Accuracy"), col=c("green","green","black","black"),lty=c(1,2,1,2) )
 ```
 
 Destaca el descenso del F1-score para el conjunto train a partir de 3 genes. Elegimos esta huella aún observando que el accuracy del train está entorno al 50%. Veamos lo obtenido para el conjunto test en la siguiente matriz de confusión:
@@ -1316,7 +1318,6 @@ dataPlot(knn_trn_mrmr, MLLabels, mode='heatmapResults')
 ```
 
 
-En segundo lugar, se presenta el siguiente código con el objetivo de mostar resultado, para el modelo de regresión logística con una penalización de $decay = 10^{-4}$ (la objetenida con el modelo `logistic_trn_mrmr` en la sección anterior) y utilizando el seleccionador de características mRMR, en 5CV Trn-Test para todo el dataset:
 
 
 ```{r}
@@ -1365,12 +1366,12 @@ F1_Train_Mean <- colMeans(F1_Train)
 F1_Val_Mean <- colMeans(F1_Val)
 
 #Mostramos gáficamente los resultados:
-plot(1:nVarsMAX, ACC_Train_Mean[1:nVarsMAX], "l", col="black", ylim=c(0.0,1.0), ylab='Métricas')
+plot(1:nVarsMAX, ACC_Train_Mean[1:nVarsMAX], "l", col="black", ylim=c(0.0,1.0), ylab='Metrics', xlab='Number of genes')
 lines(1:nVarsMAX, ACC_Val_Mean[1:nVarsMAX],"l",lty=2, col="black")
 grid()
 lines(1:nVarsMAX, F1_Train_Mean[1:nVarsMAX],"l",col="green")
 lines(1:nVarsMAX, F1_Val_Mean[1:nVarsMAX],"l", lty=2, col="green")
-title(main = "KNN-MRMR con 5CV")
+title(main = "KNN-MRMR 5CV")
 legend("bottomright",c("F-Score Train", "F-Score Val", "Accuracy Train", "Accuracy Val"), col=c("green","green","black","black"),lty=c(1,2,1,2), cex=1)
 
 #Mostramos los 5 rankings:
@@ -1380,13 +1381,18 @@ print(ranking_list[,1:10])
 
 ```{r}
 # Se observan la variable rankingSMRMR
-ranking_list[,1:5]
+ranking_list[,1:10]
 # rankingMRMR de la última iteración pero solo lo utilizamos para saber el nombre de los genes
-colnames(MLMatrix)[c(125, 72, 54, 9, 68)]
-```
-## 4.1. Resultado de la huella final escogida y clasificador en 5 CV, matriz de confusión final del dataset.
 
-Podemos comenzar esta sección calculando la matriz final del modelo conocida la huella volviendo a probar en 5CV con el número de genes escogidos, es decir, *numGenes <- 5*:
+```
+```{r}
+huella <- colnames(MLMatrix)[c(125, 72, 54, 9, 68, 115, 70)]
+num_genes <- length(huella)
+num_genes
+huella
+```
+
+## 4.1. Resultado de la huella final escogida y clasificador en 5 CV, matriz de confusión final del dataset.
 
 ```{r, results='hide'}
 set.seed(19)
@@ -1400,10 +1406,6 @@ F1_Test  <- numeric(nfolds)
 
 # Matriz de confusión acumulada para el test
 conf_matrix <- matrix(0, nrow = 2, ncol = 2)
-
-# Ranking con mRMR
-huella <- c("MMD2", "PRPSAP1", "CD37", "GPR155", "KCNJ11")
-num_genes <- 5
 
 # Bucle para 5 particiones
 for (particion in seq_len(nfolds)) {
@@ -1451,32 +1453,103 @@ ACC_Test  <- numeric(nfolds)
 F1_Test  <- numeric(nfolds)
 
 # Matriz de confusión acumulada para el test
-conf_matrix <- matrix(0, nrow = 2, ncol = 2)
-
-# Ranking con mRMR
-huella <- c("IGHV3-73", "SP140", "IGHV6-1")
-num_genes <- 3
+#lista_matrices <- rep(list(matrix(0, nrow = filas, ncol = columnas)), n)
+conf_matrix <- vector("list", num_genes)  
 
 nData<-dim(MATRIZ)[1]
 indexTest<-which(folds ==1) # para ejecuciones no CV
 indexTrn<-which(folds != 1) # para ejecuciones no CV
 XTrn<-MATRIZ[, indexTrn]
 XTest<-MATRIZ[,indexTest]
-YTrn<-LABELS[indexTrn]
-YTest<-LABELS[indexTest]
 
-#Entrenamos el modelo sólo con los datos de entrenamiento. Podríamos hacerlo con el total de los datos.
-model_trn <- knn_trn(t(XTrn), YTrn, vars_selected = huella) 
 LABELS_AUX <- rep('oligodendroglioma', times=dim(MATRIZ_M)[2])
 LABELS_AUX[1] <- "astrocytoma" #Para que no de error
+i = 2
+
+#Entrenamos el modelo con el total de los datos.
+model_trn <- knn_trn(t(XTrn), YTrn, vars_selected = huella) 
+
 model_test <- knn_test(t(XTrn), YTrn, t(MATRIZ_M), LABELS_AUX, vars_selected = huella, bestK=model_trn$bestK)
 
 #Accuracy y F-Score nos dan igual, solo queremos ver cómo ha clasificado las muestras
-conf_matrix <- model_test$cfMats[[num_genes]]$table
+for (i in 1:num_genes){
+  conf_matrix[[i]] <- model_test$cfMats[[i]]$table
+}
+```
+
+```{r}
+for (i in 1:num_genes){
+  dataPlot(conf_matrix[[i]], mode = "confusionMatrix")
+}
 ```
 ```{r}
-dataPlot(conf_matrix, mode = "confusionMatrix")
+#DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
+png('box.png', width = 800, height = 600)
+dataPlot(MATRIZ_ALL[huella,], LABELS_ALL, mode = "genesBoxplot")
+#png('3b.png', width = 800, height = 600)
+dataPlot(MATRIZ_ALL[huella,], LABELS_ALL, mode = "heatmap")
 ```
+
+## Enriquecimiento funcional de la huella
+
+```{r}
+#ENRIQUECIMIENTO FUNCIONAL:
+entrezAnnotation <- getGenesAnnotation(huella, attributes = c("external_gene_name","entrezgene_id"), filter = "external_gene_name")
+entrezGeneIds<- entrezAnnotation$entrezgene_id[!is.na(entrezAnnotation$entrezgene_id)]
+```
+```{r}
+entrezAnnotation
+```
+
+```{r}
+GOs <- geneOntologyEnrichment_updated(as.character(entrezGeneIds), geneType = "ENTREZ_GENE_ID")
+save(GOs, file='GOs')
+```
+```{r}
+load('GOs')
+GOs
+```
+
+```{r}
+sort(GOs$p.adjust, decreasing = F)[1:5]
+posiciones<-order(GOs$p.adjust, decreasing = F)[1:5]
+posiciones
+rownames(GOs)[posiciones][1:5]
+GOs$Description[posiciones]
+GOs$geneID[posiciones]
+```
+
+```{r}
+pathways <- DEGsToPathways(entrezAnnotation$external_gene_name)
+pathways_df <- data.frame(
+  Kegg_path = unlist(pathways$KEGG_Path),
+  Name = unlist(pathways$Name),
+  Description = unlist(pathways$Description),
+  Class = unlist(pathways$Class),
+  Genes = unlist(pathways$Genes)
+)
+```
+
+```{r}
+pathways_df
+```
+
+```{r}
+diseases <- DEGsToDiseases(entrezAnnotation$external_gene_name, getEvidences = TRUE)
+```
+
+```{r}
+diseases
+```
+
+
+
+
+
+
+
+
+
 
 
 
