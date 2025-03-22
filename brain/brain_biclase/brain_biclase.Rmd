@@ -1,12 +1,4 @@
-# 1. Introducción
 
-## 1.1. Datos bajados de GDC
-
-## 1.2. Algoritmos escogidos
-
-# 2. Preparación de los datos
-
-En esta sección, tras preparar los datos, se tomarán distintos valores de LFC (Log Fold Change) y COV para determinar el número óptimo de genes diferencialmente expresados (DE), manteniendo un rango aproximado entre 50 y 300 genes. Se presentará una tabla comparativa con el número de genes obtenidos en función de diferentes combinaciones de estos parámetros.
 
 ```{r, results='hide', warning=FALSE, message=F, include=FALSE, echo=F}
 library(BiocManager)
@@ -135,9 +127,9 @@ save(LABELS, file = 'LABELS')
 
 ```{r}
 load(file = 'MATRIZ')
-MATRIZ_ALL <- MATRIZ
+MATRIZ_ALL <- MATRIZ #Matriz con las 3 clases
 load(file = 'LABELS')
-LABELS_ALL <- LABELS
+LABELS_ALL <- LABELS #Etiquetas de las 3 clases
 
 #rownames(MATRIZ)<- make.names(rownames(MATRIZ))
 ```
@@ -148,8 +140,8 @@ table(LABELS_ALL)
 
 
 ```{r}
-MATRIZ_M <- MATRIZ_ALL[, LABELS_ALL=="mixed_glioma"]
-MATRIZ <- MATRIZ_ALL[, !(LABELS_ALL=="mixed_glioma")]
+MATRIZ_M <- MATRIZ_ALL[, LABELS_ALL=="mixed_glioma"] #Matriz con solo gliomas mixtos
+MATRIZ <- MATRIZ_ALL[, !(LABELS_ALL=="mixed_glioma")] #Matriz sin gliomas mixtos
 ```
 
 ```{r}
@@ -1366,7 +1358,7 @@ F1_Train_Mean <- colMeans(F1_Train)
 F1_Val_Mean <- colMeans(F1_Val)
 
 #Mostramos gáficamente los resultados:
-plot(1:nVarsMAX, ACC_Train_Mean[1:nVarsMAX], "l", col="black", ylim=c(0.0,1.0), ylab='Metrics', xlab='Number of genes')
+plot(1:nVarsMAX, ACC_Train_Mean[1:nVarsMAX], "l", col="black", ylim=c(0.6,1.0), ylab='Metrics', xlab='Number of genes')
 lines(1:nVarsMAX, ACC_Val_Mean[1:nVarsMAX],"l",lty=2, col="black")
 grid()
 lines(1:nVarsMAX, F1_Train_Mean[1:nVarsMAX],"l",col="green")
@@ -1484,11 +1476,39 @@ for (i in 1:num_genes){
 ```
 ```{r}
 #DEGsMatrix <- DEGsInfo$DEG_Results$DEGs_Matrix
-png('box.png', width = 800, height = 600)
-dataPlot(MATRIZ_ALL[huella,], LABELS_ALL, mode = "genesBoxplot")
+for(gen in huella){
+  print(gen)
+#png('box.png', width = 800, height = 600)
+  #dataPlot(MATRIZ_ALL[gen, , drop = FALSE], LABELS_ALL, mode = "heatmap")
+  dataPlot(MATRIZ_ALL[gen, , drop = FALSE], LABELS_ALL, mode = "genesBoxplot")
+}
 #png('3b.png', width = 800, height = 600)
-dataPlot(MATRIZ_ALL[huella,], LABELS_ALL, mode = "heatmap")
+#dataPlot(MATRIZ_ALL[huella,], LABELS_ALL, mode = "heatmap")
 ```
+```{r}
+for (gen in huella) {
+  gen_data <- MATRIZ_ALL[gen, , drop = FALSE]
+  
+  gen_df <- data.frame(
+    Expression = as.vector(gen_data),
+    Class = LABELS_ALL
+  )
+  png(paste0("boxplot_", gen, ".png"), width = 400, height = 400)
+  boxplot(Expression ~ Class, data = gen_df, 
+          main = gen,  
+          xlab = "",  
+          ylab = "Expression", 
+          col = "lightblue",
+          cex.axis = 0.9,  # Ajustar tamaño de las etiquetas del eje X
+          cex.lab = 1.5,   # Aumentar tamaño de las etiquetas de los ejes
+          cex.main = 2.2,    # Aumentar tamaño del título
+          cex.sub = 1.2,    # Aumentar tamaño de la leyenda, si aplica
+          boxwex  = 0.6
+  )
+  dev.off()  # Cerrar el archivo PNG
+}
+```
+
 
 ## Enriquecimiento funcional de la huella
 
@@ -1541,6 +1561,62 @@ diseases <- DEGsToDiseases(entrezAnnotation$external_gene_name, getEvidences = T
 ```{r}
 diseases
 ```
+
+## Enriquecimiento de los genes seleccionados
+
+```{r}
+studied_genes <- c("MMD2", "CD37", "PRPSAP1")
+```
+
+```{r}
+entrezAnnotation <- getGenesAnnotation(studied_genes, attributes = c("external_gene_name","entrezgene_id"), filter = "external_gene_name")
+entrezGeneIds<- entrezAnnotation$entrezgene_id[!is.na(entrezAnnotation$entrezgene_id)]
+```
+
+```{r}
+entrezAnnotation
+```
+
+```{r}
+GOs <- geneOntologyEnrichment_updated(as.character(entrezGeneIds), geneType = "ENTREZ_GENE_ID")
+save(GOs, file='GOs')
+```
+```{r}
+load('GOs')
+GOs
+```
+
+```{r}
+sort(GOs$p.adjust, decreasing = F)[1:5]
+posiciones<-order(GOs$p.adjust, decreasing = F)[1:5]
+posiciones
+rownames(GOs)[posiciones][1:5]
+GOs$Description[posiciones]
+GOs$geneID[posiciones]
+```
+```{r}
+pathways <- DEGsToPathways(entrezAnnotation$external_gene_name)
+pathways_df <- data.frame(
+  Kegg_path = unlist(pathways$KEGG_Path),
+  Name = unlist(pathways$Name),
+  Description = unlist(pathways$Description),
+  Class = unlist(pathways$Class),
+  Genes = unlist(pathways$Genes)
+)
+```
+```{r}
+pathways_df
+```
+```{r}
+diseases <- DEGsToDiseases(entrezAnnotation$external_gene_name, getEvidences = TRUE)
+diseases
+```
+
+
+
+
+
+
 
 
 
